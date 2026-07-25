@@ -9,5 +9,11 @@ node_modules/
 .env
 .env.*
 
+# The MCP Registry signing key lives in ~/.config/mcp-publisher/, not here.
+# This is a net in case anyone follows the registry docs literally and
+# generates key.pem into the working tree.
+*.pem
+key.pem
+
 *.log
 .DS_Store
