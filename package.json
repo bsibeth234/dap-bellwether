@@ -1,0 +1,27 @@
+{
+  "name": "dap-bellwether",
+  "version": "1.0.0",
+  "description": "A free regulatory change feed for Canada, the US, the UK and the EU, delivered as an MCP connector.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "verify:sources": "node scripts/verify-sources.mjs",
+    "build:favicon": "node scripts/build-favicon-ico.mjs",
+    "build:og": "node scripts/build-og-card.mjs",
+    "build:assets": "node scripts/build-assets.mjs",
+    "dev": "wrangler dev",
+    "db:create": "wrangler d1 create bellwether",
+    "db:migrate": "wrangler d1 execute bellwether --file=./schema.sql --remote",
+    "db:migrate:local": "wrangler d1 execute bellwether --file=./schema.sql --local",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

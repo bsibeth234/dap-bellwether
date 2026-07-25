@@ -1,0 +1,30 @@
+{
+  "name": "DAP Bellwether",
+  "short_name": "Bellwether",
+  "description": "A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F1F1ED",
+  "theme_color": "#15171A",
+  "icons": [
+    {
+      "src": "/icons/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/favicon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

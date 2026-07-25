@@ -1,0 +1,35 @@
+name = "dap-bellwether"
+main = "src/index.js"
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Must be set explicitly, and must stay above the routes table so it is a top
+# level key rather than part of it. Wrangler leaves the workers.dev subdomain
+# enabled by default only while no routes exist, so declaring the route below
+# would otherwise switch it off and break the fallback URL, which is already
+# in the README and may already be in someone's connector settings.
+workers_dev = true
+
+# The canonical connector URL. A Workers custom domain creates a proxied DNS
+# record for this hostname in the dap.solutions zone and provisions its
+# certificate. Nothing else in the zone is touched.
+[[routes]]
+pattern = "bellwether.dap.solutions"
+custom_domain = true
+
+# Four times a day. Regulators publish on business hours in four time zones,
+# and six hourly collection keeps the connector fresh without hammering
+# anyone's website. Raise the cadence only if a user actually notices the lag.
+[triggers]
+crons = ["0 */6 * * *"]
+
+# Create with:
+#   npx wrangler d1 create bellwether
+# then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "bellwether"
+database_id = "cb812950-20d4-45a1-b7c7-531ed0234e7b"
+
+[observability]
+enabled = true

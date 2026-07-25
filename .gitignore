@@ -1,0 +1,13 @@
+node_modules/
+
+# Wrangler local state, including the local D1 sqlite files.
+.wrangler/
+
+# Secrets never enter the repo. Cloudflare credentials live in the environment
+# or in wrangler secrets, not here.
+.dev.vars
+.env
+.env.*
+
+*.log
+.DS_Store

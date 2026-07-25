@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Authority Publications</title>
+  <updated>2026-07-22T11:00:00Z</updated>
+  <entry>
+    <title>Guidelines on crypto-asset exposures</title>
+    <id>urn:uuid:9c1f2a44-0000-4000-8000-abcdefabcdef</id>
+    <link rel="self" href="https://example.eu/api/entry/1"/>
+    <link rel="alternate" href="https://example.eu/publications/crypto-guidelines"/>
+    <updated>2026-07-22T11:00:00Z</updated>
+    <summary>Final guidelines setting out capital treatment for crypto-asset exposures.</summary>
+  </entry>
+  <entry>
+    <title>Consultation paper on sustainability disclosures</title>
+    <id>urn:uuid:9c1f2a44-0001-4000-8000-abcdefabcdef</id>
+    <link href="https://example.eu/publications/sustainability-cp"/>
+    <published>2026-07-19T08:00:00Z</published>
+    <content type="html">&lt;div&gt;Comments close 30 September 2026.&lt;/div&gt;</content>
+  </entry>
+</feed>

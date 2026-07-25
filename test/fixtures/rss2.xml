@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Regulator News</title>
+    <link>https://example.gov/news</link>
+    <description>News and announcements</description>
+    <item>
+      <title>Consultation on draft Liquidity Adequacy Requirements</title>
+      <link>https://example.gov/news/liquidity-consultation</link>
+      <description>&lt;p&gt;The regulator is launching a &lt;strong&gt;90-day&lt;/strong&gt; consultation on liquidity requirements.&lt;/p&gt;</description>
+      <pubDate>Tue, 21 Jul 2026 14:00:00 GMT</pubDate>
+      <guid isPermaLink="false">20260721</guid>
+    </item>
+    <item>
+      <title>Final Minimum Capital Test Guideline</title>
+      <link>https://example.gov/news/mct-final</link>
+      <description>The new guideline comes into force on 1 January 2027.</description>
+      <pubDate>Mon, 13 Jul 2026 09:30:00 GMT</pubDate>
+      <guid isPermaLink="false">20260713</guid>
+    </item>
+  </channel>
+</rss>
