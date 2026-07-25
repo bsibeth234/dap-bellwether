@@ -18,6 +18,11 @@ what it does.
 | Cron | `0 */6 * * *`, every six hours |
 | First successful ingest | 2026-07-25, 10 of 10 sources, 117 records |
 | Sources verified against the live web | 2026-07-24 |
+| Registry name | `solutions.dap/bellwether` |
+| Registry entry | https://registry.modelcontextprotocol.io, published 1.0.0 on 2026-07-25, status active |
+| Signing key | `~/.config/mcp-publisher/dap-solutions-key.pem`, mode 600, outside the repo, not recoverable, also held in a password manager |
+| Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
+| Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
 
 ## The corrected endpoints
 
