@@ -184,7 +184,21 @@ test('the head declares the social card metadata', async () => {
   );
   assert.match(body, /<meta name="twitter:card" content="summary_large_image">/);
   assert.ok(body.includes(`<meta name="twitter:image" content="${ORIGIN}/og.png">`));
-  assert.ok(body.includes(`<meta property="og:url" content="${ORIGIN}/">`));
+
+  // og:url names the address the card should point at, which is a claim about
+  // the service rather than about the host that answered. It follows the
+  // canonical, so a card shared from the fallback still sends people to the
+  // real site. The image stays origin relative: it is a file being fetched,
+  // not an address being advertised.
+  const canonical = '<meta property="og:url" content="https://bellwether.dap.solutions/">';
+  assert.ok(body.includes(canonical));
+
+  const onFallback = await (await get('/', 'https://dap-bellwether.dap-solutions.workers.dev')).text();
+  assert.ok(onFallback.includes(canonical), 'og:url must not follow the fallback host');
+  assert.ok(
+    onFallback.includes('<meta property="og:image" content="https://dap-bellwether.dap-solutions.workers.dev/og.png">'),
+    'the card image is still served by whichever host answered'
+  );
 
   for (const tag of ['og:type', 'og:site_name', 'og:title', 'og:description']) {
     assert.ok(body.includes(`property="${tag}"`), `${tag} must be declared`);

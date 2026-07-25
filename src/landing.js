@@ -237,7 +237,7 @@ export function renderLanding(origin) {
 <meta property="og:site_name" content="DAP Bellwether">
 <meta property="og:title" content="DAP Bellwether, a free regulatory change feed">
 <meta property="og:description" content="${esc(DESCRIPTION)}">
-<meta property="og:url" content="${esc(origin)}/">
+<meta property="og:url" content="${esc(CANONICAL_URL)}">
 <meta property="og:image" content="${esc(origin)}/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
