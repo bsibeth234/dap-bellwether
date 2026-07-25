@@ -20,6 +20,17 @@ import { SOURCES, JURISDICTIONS, enabledSources } from './sources.js';
 const DESCRIPTION =
   'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
 
+/**
+ * The one address this service should be indexed under.
+ *
+ * Hardcoded on purpose, and the only URL on the page that is. The workers.dev
+ * fallback serves the same document, so a crawler that reaches both sees two
+ * copies of one page and picks a winner itself. Deriving this from the request
+ * would tell it that each copy is its own canonical, which is the opposite of
+ * what the tag is for.
+ */
+export const CANONICAL_URL = 'https://bellwether.dap.solutions/';
+
 /** The connector setup steps, in one place because two pages show them. A
  *  second copy would drift the first time Claude renames a menu, and the copy
  *  that drifts is the one nobody remembers to open. */
@@ -220,6 +231,7 @@ export function renderLanding(origin) {
 <title>DAP Bellwether, a free regulatory change feed</title>
 <meta name="description" content="${esc(DESCRIPTION)}">
 <meta name="theme-color" content="#15171A">
+<link rel="canonical" href="${esc(CANONICAL_URL)}">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DAP Bellwether">

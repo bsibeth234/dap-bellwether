@@ -165,9 +165,19 @@ async function handleMessage(message, env) {
   }
 }
 
+/**
+ * This route answers two different media types at one URL, chosen by Accept.
+ * Any cache between here and the caller therefore has to key on Accept, or it
+ * will hand the cached HTML to a client that asked for the event stream. The
+ * HTML variant is the dangerous one, because it is the only cacheable response
+ * on the route, so it is the one that would be handed out wrongly.
+ */
+const VARY_ON_ACCEPT = 'Accept';
+
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
+  Vary: VARY_ON_ACCEPT,
 };
 
 /**
@@ -200,6 +210,11 @@ export async function handleMcpRequest(request, env) {
         // because this endpoint never answered as a document. It answers as
         // one now, so the response has to refuse the transform.
         'Cache-Control': 'public, max-age=300, no-transform',
+        // Without this, the only cacheable response on the route is also the
+        // wrong answer for every other caller: a browser cache holding this
+        // page would serve it to the next request on this URL whatever that
+        // request asked for, including an SSE probe.
+        Vary: VARY_ON_ACCEPT,
       },
     });
   }
@@ -241,9 +256,12 @@ export async function handleMcpRequest(request, env) {
     });
   }
 
+  // Carried by the bodiless 202s too, which do not go through JSON_HEADERS.
+  // A 202 is not something a cache should be reusing, but the route either
+  // varies on Accept everywhere or the guarantee has a hole in it.
   const corsHeaders = request.headers.get('Origin')
-    ? { 'Access-Control-Allow-Origin': request.headers.get('Origin') }
-    : {};
+    ? { 'Access-Control-Allow-Origin': request.headers.get('Origin'), Vary: VARY_ON_ACCEPT }
+    : { Vary: VARY_ON_ACCEPT };
 
   // A batch of notifications produces no responses at all, which is a 202.
   if (Array.isArray(payload)) {

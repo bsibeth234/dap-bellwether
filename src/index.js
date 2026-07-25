@@ -16,6 +16,18 @@ import { enabledSources } from './sources.js';
 import { renderLanding } from './landing.js';
 import { serveAsset } from './assets.js';
 
+/**
+ * Whether this request arrived on the workers.dev fallback rather than the
+ * custom domain. Matched on the suffix rather than the exact hostname so a
+ * preview or a renamed Worker is covered without anyone remembering to come
+ * back and edit a literal.
+ *
+ * @param {string} hostname
+ */
+export function isFallbackHost(hostname) {
+  return String(hostname).toLowerCase().endsWith('.workers.dev');
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -58,16 +70,27 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '') {
+      const headers = {
+        'Content-Type': 'text/html; charset=utf-8',
+        // Short, because the coverage list comes from the registry and a
+        // corrected or disabled source should reach visitors quickly.
+        'Cache-Control': 'public, max-age=300',
+      };
+
+      // The fallback host serves the same document as the custom domain, so
+      // without this a crawler can index the workers.dev copy and show it to
+      // people instead. The canonical tag in the head states the preference;
+      // this removes the choice. Scoped to the page rather than applied at the
+      // top of fetch on purpose: /mcp and /health are not indexable content in
+      // the first place, and assets carry a year long cache, so a header
+      // attached to them would outlive any future move to a different host.
+      if (isFallbackHost(url.hostname)) {
+        headers['X-Robots-Tag'] = 'noindex';
+      }
+
       // The origin is taken from the request so the page advertises whichever
       // hostname the visitor arrived on, custom domain or workers.dev.
-      return new Response(renderLanding(url.origin), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          // Short, because the coverage list comes from the registry and a
-          // corrected or disabled source should reach visitors quickly.
-          'Cache-Control': 'public, max-age=300',
-        },
-      });
+      return new Response(renderLanding(url.origin), { headers });
     }
 
     return new Response('Not found', { status: 404 });

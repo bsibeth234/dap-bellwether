@@ -406,6 +406,40 @@ test('the origin guard runs before the browser diversion', async () => {
   assert.match(response.headers.get('Content-Type'), /application\/json/);
 });
 
+test('both variants on the route vary on Accept', async () => {
+  // One URL, two media types, chosen by a request header. A cache that does
+  // not key on Accept will serve whichever it stored first to everyone, and
+  // the HTML variant is the only cacheable response here, so the failure is
+  // specifically a browser cache handing a web page to an SSE probe.
+  const env = await seededEnv();
+
+  const html = await handleMcpRequest(rpc(null, { method: 'GET', accept: BROWSER_ACCEPT }), env);
+  assert.match(html.headers.get('Content-Type'), /^text\/html/);
+  assert.equal(html.headers.get('Vary'), 'Accept', 'the cacheable variant must declare it');
+
+  const sse = await handleMcpRequest(rpc(null, { method: 'GET', accept: 'text/event-stream' }), env);
+  assert.match(sse.headers.get('Content-Type'), /application\/json/);
+  assert.equal(sse.headers.get('Vary'), 'Accept');
+
+  const post = await handleMcpRequest(
+    rpc({ jsonrpc: '2.0', id: 21, method: 'tools/list' }, { accept: BROWSER_ACCEPT }),
+    env
+  );
+  assert.equal(post.headers.get('Vary'), 'Accept');
+
+  // The refusals and the bodiless ack too, so the route has no gap in it.
+  const refused = await handleMcpRequest(
+    rpc({ jsonrpc: '2.0', id: 22, method: 'tools/list' }, { origin: 'https://evil.example' }),
+    env
+  );
+  assert.equal(refused.status, 403);
+  assert.equal(refused.headers.get('Vary'), 'Accept');
+
+  const ack = await handleMcpRequest(rpc({ jsonrpc: '2.0', method: 'ping' }), env);
+  assert.equal(ack.status, 202);
+  assert.equal(ack.headers.get('Vary'), 'Accept');
+});
+
 test('only an explicit HTML preference opens the page', () => {
   // The header shapes that must not divert, each one a real caller.
   assert.equal(prefersHtml(null), false, 'no Accept at all, common server to server');

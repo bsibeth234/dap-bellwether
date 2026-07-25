@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../src/index.js';
+import worker, { isFallbackHost } from '../src/index.js';
 import { renderLanding } from '../src/landing.js';
 import { enabledSources, SOURCES } from '../src/sources.js';
 
@@ -118,6 +118,61 @@ test('the MCP endpoint returns JSON with no injected beacon', async () => {
   assert.ok(!/<script/i.test(body), 'no script tag may appear in an MCP response');
   assert.ok(!/cloudflareinsights|beacon\.min\.js/i.test(body), 'no beacon may appear in an MCP response');
   JSON.parse(body); // must be JSON, which is not a document and cannot be injected into
+});
+
+test('the canonical points at the custom domain from either host', async () => {
+  // Two hostnames serve this same document. The tag has to name one winner,
+  // so unlike every other URL on the page it must not follow the request.
+  const expected = '<link rel="canonical" href="https://bellwether.dap.solutions/">';
+
+  const onCustomDomain = await (await get('/')).text();
+  assert.ok(onCustomDomain.includes(expected));
+
+  const onFallback = await (await get('/', 'https://dap-bellwether.dap-solutions.workers.dev')).text();
+  assert.ok(
+    onFallback.includes(expected),
+    'the fallback must point at the custom domain, not at itself'
+  );
+});
+
+test('the fallback host asks not to be indexed, the custom domain does not', async () => {
+  const fallback = await get('/', 'https://dap-bellwether.dap-solutions.workers.dev');
+  assert.equal(fallback.headers.get('X-Robots-Tag'), 'noindex');
+
+  const custom = await get('/');
+  assert.equal(custom.headers.get('X-Robots-Tag'), null, 'the real site must stay indexable');
+});
+
+test('noindex is scoped to the page and never reaches the endpoint or the assets', async () => {
+  // An asset carries a year long cache, so a noindex attached to one would
+  // outlive any future move between hosts. /mcp and /health are not indexable
+  // content to begin with and should not be carrying SEO headers at all.
+  const FALLBACK = 'https://dap-bellwether.dap-solutions.workers.dev';
+
+  for (const path of ['/health', '/favicon.ico', '/og.png', '/fonts/Archivo-600.ttf']) {
+    const response = await get(path, FALLBACK);
+    assert.equal(response.headers.get('X-Robots-Tag'), null, `${path} must not carry noindex`);
+  }
+
+  const mcp = await worker.fetch(
+    new Request(`${FALLBACK}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    }),
+    { DB: null },
+    {}
+  );
+  assert.equal(mcp.headers.get('X-Robots-Tag'), null, '/mcp must not carry noindex');
+});
+
+test('isFallbackHost matches the fallback without catching the custom domain', () => {
+  assert.equal(isFallbackHost('dap-bellwether.dap-solutions.workers.dev'), true);
+  assert.equal(isFallbackHost('DAP-BELLWETHER.DAP-SOLUTIONS.WORKERS.DEV'), true, 'case insensitive');
+  assert.equal(isFallbackHost('bellwether.dap.solutions'), false);
+  // A hostname that merely ends in the same letters is not the fallback.
+  assert.equal(isFallbackHost('notworkers.dev'), false);
+  assert.equal(isFallbackHost('workers.dev.evil.example'), false);
 });
 
 test('the head declares the social card metadata', async () => {
