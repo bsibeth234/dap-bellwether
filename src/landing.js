@@ -240,6 +240,18 @@ footer p{max-width:36rem}
 <p>${feedCount} feeds across ${jurisdictionCount} jurisdictions. This list is generated from the live source registry, so it is what the connector actually collects rather than what it once intended to.</p>
 ${coverageMarkup()}
 
+<h2>How this was built</h2>
+<p>Bellwether went from a question to a deployed public service in under forty minutes, built by one person who does not write code, working with Claude.</p>
+<p>It runs on Cloudflare Workers with a D1 database and a cron trigger every six hours. The ingest normalises ${feedCount} feeds into one record shape and hashes each record, so an amendment is detected rather than quietly overwritten. The MCP layer is written against the streamable HTTP transport. There is a test suite, a privacy statement, a custom domain, and an entry in the official MCP Registry under a DNS verified namespace. Hosting costs nothing at this volume.</p>
+<p>The source is public under the MIT licence. <a href="https://github.com/bsibeth234/dap-bellwether">Read it, fork it, run your own.</a></p>
+<p>The point is not that the tool is clever. It is that the cost of building a working, governed, production system has collapsed, and most of what institutions license today was priced before that happened.</p>
+
+<h2>Working with us</h2>
+<p>Dartmouth Advisory Partners is software in a service, not software as a service. We do not hand you a licence and wish you luck. You name the outcome. We build the system that produces it, in your environment, and you own what we build.</p>
+<p>We work with compliance, risk and investment functions at asset owners, asset managers, OCIOs, pensions, insurers and family offices. Work that is quoted in quarters elsewhere gets delivered here in weeks, and often in days. This page is the evidence, not the exception.</p>
+<p>If something here made you think of a problem in your own shop, that is the conversation.</p>
+<p><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></p>
+
 <h2>Privacy</h2>
 <p>The connector collects no personal data. This page counts visits without cookies or identifiers.</p>
 <dl>
