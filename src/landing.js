@@ -20,6 +20,16 @@ import { SOURCES, JURISDICTIONS, enabledSources } from './sources.js';
 const DESCRIPTION =
   'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
 
+/** The connector setup steps, in one place because two pages show them. A
+ *  second copy would drift the first time Claude renames a menu, and the copy
+ *  that drifts is the one nobody remembers to open. */
+export const SETUP_STEPS = [
+  'In Claude, open Customize, then Connectors.',
+  'Click the plus button next to Connectors and choose add custom connector.',
+  'Give it a name, paste the URL above, and click Add.',
+  'In a chat, click the plus button, hover Connectors, and toggle it on.',
+];
+
 /** Escape anything interpolated into markup. Registry text is ours, but a
  *  page that trusts its inputs teaches the next person to do the same. */
 function esc(value) {
@@ -65,6 +75,132 @@ function coverageMarkup() {
     : '';
 
   return `<div class="jurs">${blocks}</div>${notMonitored}`;
+}
+
+/**
+ * The page a person gets when they paste the connector URL into a browser
+ * instead of into Claude.
+ *
+ * Served only for a GET whose Accept ranks text/html above the protocol types,
+ * so no MCP client can reach it. It exists because the honest protocol answer,
+ * a JSON-RPC error saying SSE is not supported, reads as a broken service to
+ * the one audience most likely to see it.
+ *
+ * Deliberately self contained rather than sharing the landing page's stylesheet:
+ * this is a dead end page, and coupling it to the main sheet would mean every
+ * future landing page change has to be re-checked here.
+ *
+ * @param {string} origin the request origin, so the URL shown is the one the
+ *   visitor actually reached and will actually work
+ */
+export function renderConnectorNotice(origin) {
+  const mcpUrl = `${origin}/mcp`;
+  let host = origin;
+  try {
+    host = new URL(origin).host;
+  } catch {
+    // An unparseable origin is not worth failing a page over.
+  }
+
+  return `<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAP Bellwether, connector endpoint</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#15171A">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<style>
+@font-face{font-family:"Archivo";src:url("/fonts/Archivo-600.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"Hanken Grotesk";src:url("/fonts/Hanken-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/JBMono-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+:root{
+  --paper:#F1F1ED; --field:#FBFBF8;
+  --graphite:#23262A; --carbon:#15171A;
+  --vermilion:#D8412F;
+  --steel:#8A9099; --steel-ink:#565B61;
+  --rule:#D6D6D0;
+  --display:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --text:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background-color:var(--paper);
+  background-image:
+    repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(to bottom, var(--rule) 0 1px, transparent 1px 64px);
+  background-size:64px 64px;
+  color:var(--graphite);
+  font-family:var(--text);
+  font-size:17px;
+  line-height:1.65;
+}
+body::before{content:"";position:fixed;inset:0;background:var(--paper);opacity:.88;z-index:-1}
+.wrap{max-width:47rem;margin:0 auto;padding:4rem 1.5rem 5rem}
+header{border-bottom:1px solid var(--rule);padding-bottom:1.75rem;margin-bottom:2.5rem}
+.eyebrow{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--steel-ink);margin:0 0 .85rem
+}
+h1{font-family:var(--display);font-weight:600;font-size:2.4rem;line-height:1.12;margin:0 0 .6rem;letter-spacing:-.015em}
+.lede{font-size:1.12rem;margin:0;max-width:36rem}
+p{margin:0 0 1rem;max-width:36rem}
+a{color:var(--graphite);text-underline-offset:.18em;text-decoration-color:var(--steel)}
+a:hover{text-decoration-color:var(--graphite)}
+.connector{
+  background:var(--field);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--vermilion);
+  padding:1.35rem 1.5rem;
+  margin:1.25rem 0 1.5rem;
+}
+.connector .label{
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--steel-ink);margin:0 0 .55rem
+}
+.url{font-family:var(--mono);font-size:1rem;word-break:break-all;margin:0;color:var(--carbon);user-select:all}
+ol{padding-left:1.15rem;max-width:36rem}
+ol li{margin-bottom:.45rem}
+footer{border-top:1px solid var(--rule);margin-top:3.5rem;padding-top:1.5rem;font-size:.9rem;color:var(--steel-ink)}
+footer p{max-width:36rem}
+@media (max-width:640px){
+  .wrap{padding:2.5rem 1.15rem 3.5rem}
+  h1{font-size:1.85rem}
+  body{font-size:16px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Dartmouth Advisory Partners</p>
+  <h1>This is a connector endpoint, not a web page</h1>
+  <p class="lede">This address is meant to be pasted into Claude as a custom connector rather than opened in a browser. Nothing is broken. There is simply nothing here for a browser to show.</p>
+</header>
+
+<div class="connector">
+  <p class="label">Connector URL</p>
+  <p class="url">${esc(mcpUrl)}</p>
+</div>
+<ol>
+${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
+</ol>
+<p>There is nothing to authenticate and nothing to configure. Adding a connector does not switch it on by itself, so the last step matters.</p>
+
+<footer>
+  <p>For what this service covers, who it is for and what it does not do, see <a href="${esc(origin)}/">${esc(host)}</a>.</p>
+</footer>
+
+</div>
+</body>
+</html>
+`;
 }
 
 /**
@@ -218,10 +354,7 @@ footer p{max-width:36rem}
   <p class="url">${esc(mcpUrl)}</p>
 </div>
 <ol>
-  <li>In Claude, open Customize, then Connectors.</li>
-  <li>Click the plus button next to Connectors and choose add custom connector.</li>
-  <li>Give it a name, paste the URL above, and click Add.</li>
-  <li>In a chat, click the plus button, hover Connectors, and toggle it on.</li>
+${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
 </ol>
 <p>There is nothing to authenticate and nothing to configure. Adding a connector does not switch it on by itself, so the last step matters. Free plan users are limited to one custom connector. On Team and Enterprise plans an owner adds it for the organization first.</p>
 

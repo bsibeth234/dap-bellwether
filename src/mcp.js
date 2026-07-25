@@ -14,6 +14,7 @@
  */
 
 import { TOOLS, callTool } from './tools.js';
+import { renderConnectorNotice } from './landing.js';
 
 const SERVER_INFO = { name: 'DAP Bellwether', version: '1.0.0' };
 
@@ -43,6 +44,38 @@ const ALLOWED_ORIGIN_PATTERNS = [
 export function isAllowedOrigin(origin) {
   if (!origin) return true;
   return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
+
+/**
+ * Whether an Accept header ranks HTML above the protocol media types, which in
+ * practice means a person opened this URL in a browser.
+ *
+ * Strict on purpose. Only an explicit `text/html` counts, so a wildcard cannot
+ * trigger it: curl sends a bare wildcard, plenty of server to server callers
+ * send nothing at all, and both must keep the JSON-RPC path. HTML has to
+ * outrank both text/event-stream and application/json, so a client that lists
+ * HTML among several equal alternatives is still treated as a client.
+ *
+ * @param {string|null} accept
+ * @returns {boolean}
+ */
+export function prefersHtml(accept) {
+  if (!accept) return false;
+
+  const weightOf = (mediaType) => {
+    let best = 0;
+    for (const part of accept.split(',')) {
+      const [media, ...params] = part.trim().split(';');
+      if (media.trim().toLowerCase() !== mediaType) continue;
+      const q = params.map((p) => p.trim()).find((p) => p.toLowerCase().startsWith('q='));
+      const value = q === undefined ? 1 : Number.parseFloat(q.slice(2));
+      if (Number.isFinite(value) && value > best) best = value;
+    }
+    return best;
+  };
+
+  const html = weightOf('text/html');
+  return html > 0 && html > weightOf('text/event-stream') && html > weightOf('application/json');
 }
 
 function rpcResult(id, result) {
@@ -148,6 +181,26 @@ export async function handleMcpRequest(request, env) {
     return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
       status: 403,
       headers: JSON_HEADERS,
+    });
+  }
+
+  // A person who pasted the connector URL into the address bar instead of into
+  // Claude gets a page telling them what to do with it. Sits after the origin
+  // guard so that guard still runs first, and ahead of the GET branch below so
+  // only a browser preference is diverted: every other GET, including the SSE
+  // probe, falls through to the JSON-RPC answer unchanged.
+  if (request.method === 'GET' && prefersHtml(request.headers.get('Accept'))) {
+    return new Response(renderConnectorNotice(new URL(request.url).origin), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        // no-transform is load bearing, not a cache tweak. Cloudflare injects
+        // the Web Analytics beacon into HTML at the edge, and the privacy
+        // statement says /mcp does not load it. That claim survived only
+        // because this endpoint never answered as a document. It answers as
+        // one now, so the response has to refuse the transform.
+        'Cache-Control': 'public, max-age=300, no-transform',
+      },
     });
   }
 

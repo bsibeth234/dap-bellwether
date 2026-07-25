@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { TestD1 } from './d1-shim.mjs';
-import { handleMcpRequest, isAllowedOrigin } from '../src/mcp.js';
+import { handleMcpRequest, isAllowedOrigin, prefersHtml } from '../src/mcp.js';
 import { TOOLS } from '../src/tools.js';
+import { SETUP_STEPS } from '../src/landing.js';
 import { runIngest } from '../src/ingest.js';
 
 const SOURCE = {
@@ -40,9 +41,10 @@ async function seededEnv() {
   return { DB: db };
 }
 
-function rpc(body, { origin, method = 'POST' } = {}) {
+function rpc(body, { origin, method = 'POST', accept } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (origin) headers.Origin = origin;
+  if (accept) headers.Accept = accept;
   return new Request('https://bellwether.test/mcp', {
     method,
     headers,
@@ -316,4 +318,106 @@ test('GET is refused with a usable message', async () => {
   const env = await seededEnv();
   const response = await handleMcpRequest(rpc(null, { method: 'GET' }), env);
   assert.equal(response.status, 405);
+});
+
+// The browser diversion. Everything below asserts that it is narrow: one
+// entrance, and no exit from any path a real client takes.
+
+const BROWSER_ACCEPT =
+  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8';
+
+test('a browser GET gets a page instead of a JSON-RPC error', async () => {
+  const env = await seededEnv();
+  const response = await handleMcpRequest(
+    rpc(null, { method: 'GET', accept: BROWSER_ACCEPT }),
+    env
+  );
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Content-Type'), /^text\/html/);
+  assert.match(body, /^<!doctype html>/i);
+  assert.match(body, /This is a connector endpoint, not a web page/);
+  // The URL the visitor is standing on, so it is the one they can copy.
+  assert.ok(body.includes('https://bellwether.test/mcp'));
+  // The steps are the point of the page. Assert the shared source, so a
+  // reworded step on the landing page cannot leave this page stale.
+  for (const step of SETUP_STEPS) {
+    assert.ok(body.includes(step), `the page must carry the step: ${step}`);
+  }
+});
+
+test('the connector notice refuses the edge transform that would inject a beacon', async () => {
+  // The privacy statement says /mcp loads no analytics beacon. That was free
+  // while /mcp only ever answered JSON, because Cloudflare injects into HTML
+  // only. This page is HTML, so the claim now rests entirely on this header.
+  const env = await seededEnv();
+  const response = await handleMcpRequest(
+    rpc(null, { method: 'GET', accept: BROWSER_ACCEPT }),
+    env
+  );
+  const body = await response.text();
+
+  assert.match(response.headers.get('Cache-Control'), /no-transform/);
+  assert.ok(!/<script/i.test(body), 'the page must ship no script of its own');
+  assert.ok(!/cloudflareinsights|beacon\.min\.js/i.test(body));
+});
+
+test('an SSE probe still gets the existing JSON-RPC error, not a page', async () => {
+  // The one regression that would break real clients rather than merely look
+  // untidy, so it is asserted on the error body and not just the status.
+  const env = await seededEnv();
+  const response = await handleMcpRequest(
+    rpc(null, { method: 'GET', accept: 'text/event-stream' }),
+    env
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 405);
+  assert.match(response.headers.get('Content-Type'), /application\/json/);
+  assert.equal(body.error.code, -32601);
+  assert.match(body.error.message, /SSE stream not supported/);
+});
+
+test('POST still answers JSON-RPC when the caller also accepts HTML', async () => {
+  // A POST is a client no matter what it accepts. The diversion is GET only.
+  const env = await seededEnv();
+  const response = await handleMcpRequest(
+    rpc({ jsonrpc: '2.0', id: 99, method: 'tools/list' }, { accept: BROWSER_ACCEPT }),
+    env
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Content-Type'), /application\/json/);
+  assert.equal(body.result.tools.length, TOOLS.length);
+});
+
+test('the origin guard runs before the browser diversion', async () => {
+  // Otherwise a rebinding page could read the endpoint by simply asking for
+  // HTML, which is exactly the request the guard exists to refuse.
+  const env = await seededEnv();
+  const response = await handleMcpRequest(
+    rpc(null, { method: 'GET', accept: BROWSER_ACCEPT, origin: 'https://evil.example' }),
+    env
+  );
+
+  assert.equal(response.status, 403);
+  assert.match(response.headers.get('Content-Type'), /application\/json/);
+});
+
+test('only an explicit HTML preference opens the page', () => {
+  // The header shapes that must not divert, each one a real caller.
+  assert.equal(prefersHtml(null), false, 'no Accept at all, common server to server');
+  assert.equal(prefersHtml('*/*'), false, 'curl default must stay on the protocol path');
+  assert.equal(prefersHtml('application/json, text/event-stream'), false, 'an MCP client');
+  assert.equal(prefersHtml('text/event-stream'), false);
+  assert.equal(prefersHtml('application/json'), false);
+  // A tie is not a preference, so it stays a client.
+  assert.equal(prefersHtml('text/html, application/json'), false, 'equal weights are not a preference');
+  assert.equal(prefersHtml('text/html;q=0.5, application/json;q=0.9'), false, 'outranked by JSON');
+
+  assert.equal(prefersHtml(BROWSER_ACCEPT), true, 'a real browser');
+  assert.equal(prefersHtml('text/html'), true);
+  assert.equal(prefersHtml('text/html;q=0.9, application/json;q=0.5'), true);
 });
