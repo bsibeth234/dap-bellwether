@@ -6,17 +6,18 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "verify:sources": "node scripts/verify-sources.mjs",
-    "build:favicon": "node scripts/build-favicon-ico.mjs",
-    "build:og": "node scripts/build-og-card.mjs",
-    "build:assets": "node scripts/build-assets.mjs",
-    "dev": "wrangler dev",
-    "db:create": "wrangler d1 create bellwether",
-    "db:migrate": "wrangler d1 execute bellwether --file=./schema.sql --remote",
-    "db:migrate:local": "wrangler d1 execute bellwether --file=./schema.sql --local",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "test": "sh scripts/require-sandbox.sh && node --test test/*.test.mjs",
+    "verify:sources": "sh scripts/require-sandbox.sh && node scripts/verify-sources.mjs",
+    "build:favicon": "sh scripts/require-sandbox.sh && node scripts/build-favicon-ico.mjs",
+    "build:og": "sh scripts/require-sandbox.sh && node scripts/build-og-card.mjs",
+    "build:assets": "sh scripts/require-sandbox.sh && node scripts/build-assets.mjs",
+    "dev": "sh scripts/require-sandbox.sh && wrangler dev",
+    "db:create": "sh scripts/require-sandbox.sh && wrangler d1 create bellwether",
+    "db:migrate": "sh scripts/require-sandbox.sh && wrangler d1 execute bellwether --file=./schema.sql --remote",
+    "db:migrate:local": "sh scripts/require-sandbox.sh && wrangler d1 execute bellwether --file=./schema.sql --local",
+    "deploy": "sh scripts/require-sandbox.sh && wrangler deploy",
+    "tail": "sh scripts/require-sandbox.sh && wrangler tail",
+    "sandbox:check": "sh scripts/sandbox-check.sh"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.7"

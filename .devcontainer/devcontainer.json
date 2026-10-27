@@ -1,0 +1,47 @@
+{
+  "name": "Ledger",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "CLAUDE_CODE_VERSION": "2.1.296"
+    }
+  },
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+  "remoteUser": "node",
+  "containerUser": "node",
+  "mounts": [
+    "source=ledger-gh,target=/home/node/.config/gh,type=volume",
+    "source=ledger-claude,target=/home/node/.claude,type=volume",
+    "source=ledger-history-${devcontainerId},target=/commandhistory,type=volume"
+  ],
+  "containerEnv": {
+    "LEDGER_SANDBOX": "devcontainer",
+    "PYTHONSAFEPATH": "1",
+    "SSH_AUTH_SOCK": "",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "DISABLE_AUTOUPDATER": "1",
+    "NODE_OPTIONS": "--max-old-space-size=4096"
+  },
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "",
+    "GIT_ASKPASS": "",
+    "VSCODE_GIT_IPC_HANDLE": "",
+    "GPG_AGENT_INFO": ""
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code"],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "git.enabled": false,
+        "git.terminalAuthentication": false
+      }
+    }
+  },
+  "postCreateCommand": "git config core.hooksPath .githooks",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh && rm -f /tmp/vscode-ssh-auth-* /tmp/vscode-git-*.sock && rm -rf /tmp/vscode-gpg-* && rm -f $HOME/.gnupg/S.gpg-agent* /run/user/*/gnupg/S.gpg-agent* && if gh auth status --hostname github.com >/dev/null 2>&1; then gh auth setup-git --hostname github.com; fi",
+  "waitFor": "postStartCommand"
+}

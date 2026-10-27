@@ -1,0 +1,14 @@
+#!/bin/sh
+# Adds the Sandbox trailer every Ledger commit carries (steer of 26 Oct 2026,
+# S7). CI fails a pull request with a commit that lacks it
+# (scripts/check-sandbox-trailers.mjs). Outside a sandbox, no commit.
+kind=""
+marker="${LEDGER_SANDBOX_MARKER:-/etc/ledger-sandbox}"
+if [ "${LEDGER_SANDBOX:-}" = devcontainer ] && [ -f "$marker" ]; then kind=devcontainer
+elif [ "${CLAUDE_CODE_REMOTE:-}" = true ] || [ "${LEDGER_SANDBOX:-}" = cloud ]; then kind=cloud
+fi
+if [ -z "$kind" ]; then
+  echo "Ledger runs only in the sandbox: commit refused. See bsibeth234/dap-bye-saas docs/STEER_2026-10-26-untrusted-content.md." >&2
+  exit 1
+fi
+git interpret-trailers --in-place --if-exists doNothing --trailer "Sandbox: $kind" "$1"
