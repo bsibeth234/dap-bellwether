@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null && [ -d .githooks ] && git config core.hooksPath .githooks || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ \"${GITHUB_ACTIONS:-}\" = true ] || [ \"${VERCEL:-}\" = 1 ] || [ \"${WORKERS_CI:-}\" = 1 ] || [ \"${CLAUDE_CODE_REMOTE:-}\" = true ] || [ \"${LEDGER_SANDBOX:-}\" = cloud ] || { [ \"${LEDGER_SANDBOX:-}\" = devcontainer ] && [ -f \"${LEDGER_SANDBOX_MARKER:-/etc/ledger-sandbox}\" ]; }; then exit 0; fi; echo 'Ledger runs only in the sandbox: the dev container, the cloud, or CI. See bsibeth234/dap-bye-saas docs/STEER_2026-10-26-untrusted-content.md.' >&2; exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}
