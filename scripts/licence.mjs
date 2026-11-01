@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 /**
- * Issue, revoke, list and bill DAP licences for Bellwether. Run on the Mac
- * that is signed in to Cloudflare, from the repo root.
+ * Issue, revoke, list and bill DAP licences. One licence covers Bellwether and
+ * the Compute Market Tracker; both read the dap-licences database. Run on the
+ * Mac that is signed in to Cloudflare, from the repo root.
  *
  *   node scripts/licence.mjs issue "Example Pension Plan" [--note "Master licence 2026-11"]
  *   node scripts/licence.mjs revoke lic_1a2b3c4d
  *   node scripts/licence.mjs list
  *   node scripts/licence.mjs usage 2026-11
- *   node scripts/licence.mjs check        live self test: issue, call /api and /mcp, revoke, expect 401
+ *   node scripts/licence.mjs check        live self test across Bellwether and the Compute Market Tracker
  *
- * Add --local to work on the local database instead of the live one.
+ * Add --local to work on the local database instead of the live one
+ * (LICENCE_PERSIST_TO names a shared local state folder, for testing two
+ * Workers against one licence database).
  *
  * issue prints the new key once. It is never stored, only its SHA-256 is, so
  * it cannot be shown again: give it to the licensee over a secure channel,
@@ -35,7 +38,11 @@ function option(name) {
 function d1(sql) {
   const out = execFileSync(
     'npx',
-    ['wrangler', 'd1', 'execute', 'bellwether', local ? '--local' : '--remote', '--json', '--command', sql],
+    [
+      'wrangler', 'd1', 'execute', 'dap-licences',
+      ...(local ? ['--local', ...(process.env.LICENCE_PERSIST_TO ? ['--persist-to', process.env.LICENCE_PERSIST_TO] : [])] : ['--remote']),
+      '--json', '--command', sql,
+    ],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }
   );
   const parsed = JSON.parse(out);
@@ -77,6 +84,7 @@ try {
     console.log('');
     console.log('They send it as "Authorization: Bearer <key>" (or "X-API-Key: <key>") to');
     console.log('  https://bellwether.dap.solutions/mcp  and  https://bellwether.dap.solutions/api/...');
+    console.log('  https://dap.solutions/compute/mcp  and  https://dap.solutions/compute/api/...');
   } else if (command === 'revoke') {
     const id = params[0];
     if (!id) usage();
@@ -111,10 +119,11 @@ try {
 
 /**
  * The live proof of the licence rail, run from this Mac. Issues a licence
- * named "DAP licence self test", calls the API and the connector with its key,
- * revokes it, and checks the key is then refused. The key is never printed.
- * The revoked licence and its two counted calls stay on record, by design,
- * and the usage report leaves them out.
+ * named "DAP licence self test", calls the API and the MCP endpoint of
+ * Bellwether and of the Compute Market Tracker (one licence covers both) with
+ * its key, revokes it, and checks the key is then refused everywhere and every
+ * call was counted. The key is never printed. The revoked licence and its
+ * counted calls stay on record, by design, and the usage report leaves them out.
  */
 async function selfTest() {
   // IPv6 from at least one dev machine cannot reach the Worker (CLAUDE.md).
@@ -122,6 +131,7 @@ async function selfTest() {
   net.setDefaultAutoSelectFamily(false);
   // --local checks a wrangler dev Worker on the local database instead.
   const origin = local ? process.env.BELLWETHER_ORIGIN || 'http://127.0.0.1:8787' : 'https://bellwether.dap.solutions';
+  const compute = local ? process.env.COMPUTE_ORIGIN || 'http://127.0.0.1:8788' : 'https://dap.solutions';
   const licence = newLicence();
   d1(issueSql({ id: licence.id, licensee: SELF_TEST_LICENSEE, keyHash: licence.keyHash, createdAt: new Date().toISOString(), note: 'scripts/licence.mjs check' }));
   const auth = { Authorization: `Bearer ${licence.key}` };
@@ -145,18 +155,36 @@ async function selfTest() {
     });
     const mcpText = await mcp.text();
     check('with the key, /mcp answers a data tool', mcp.status === 200 && mcpText.includes('"result"') && !mcpText.includes('"isError":true'), `HTTP ${mcp.status}`);
+
+    const cUnpaid = await fetch(`${compute}/compute/api/contracts?limit=1`);
+    check('without a key, the Compute API asks for payment', cUnpaid.status === 402, `HTTP ${cUnpaid.status}`);
+
+    const cApi = await fetch(`${compute}/compute/api/contracts?limit=1`, { headers: auth });
+    const cApiBody = cApi.ok ? await cApi.json() : null;
+    check('with the same key, the Compute API answers without payment', cApi.status === 200 && cApiBody && Array.isArray(cApiBody.contracts), `HTTP ${cApi.status}`);
+
+    const cMcp = await fetch(`${compute}/compute/mcp`, {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_compute_contracts', arguments: { limit: 1 } } }),
+    });
+    const cMcpText = await cMcp.text();
+    check('with the same key, the Compute MCP endpoint answers a data tool', cMcp.status === 200 && cMcpText.includes('"result"') && !cMcpText.includes('"isError":true'), `HTTP ${cMcp.status}`);
   } finally {
     d1(revokeSql({ id: licence.id, revokedAt: new Date().toISOString() }));
   }
   const after = await fetch(`${origin}/api/search?query=capital&limit=1`, { headers: auth });
-  check('after revoking, the key is refused', after.status === 401, `HTTP ${after.status}`);
+  check('after revoking, Bellwether refuses the key', after.status === 401, `HTTP ${after.status}`);
+  const cAfter = await fetch(`${compute}/compute/api/contracts?limit=1`, { headers: auth });
+  check('after revoking, the Compute API refuses the key', cAfter.status === 401, `HTTP ${cAfter.status}`);
 
   // Each licensed answer is counted before it is released, so the counts are already there.
   const counted = d1(
     `SELECT endpoint, calls FROM licence_usage_daily WHERE licence_id = '${licence.id}' ORDER BY endpoint;`
   );
   const total = counted.reduce((n, r) => n + Number(r.calls), 0);
-  check('both answered calls were counted for the invoice', total === 2, counted.map((r) => `${r.endpoint} ${r.calls}`).join(', ') || 'none');
+  const computeRows = counted.filter((r) => String(r.endpoint).startsWith('compute:')).length;
+  check('all four answered calls were counted for one invoice', total === 4 && computeRows === 2, counted.map((r) => `${r.endpoint} ${r.calls}`).join(', ') || 'none');
 
   console.log('');
   console.log(results.every(Boolean) ? `All checks passed. Self test licence ${licence.id} is revoked and kept on record.` : 'Some checks failed. Send this output to Claude.');

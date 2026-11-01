@@ -364,7 +364,7 @@ export async function handleApi(request, env, ctx, overrides) {
       }
       if (response.status >= 400) return response;
       // Every licensed answer is counted before it is released, or not released.
-      if (!(await countLicensedCall(env.DB, day, licence.licence.id, tool))) return licenceUnavailable();
+      if (!(await countLicensedCall(env.LICENCES, day, licence.licence.id, tool))) return licenceUnavailable();
       note(env, ctx, day, tool, 'licensed');
       return response;
     }

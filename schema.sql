@@ -95,26 +95,7 @@ CREATE TABLE IF NOT EXISTS payment_claims (
   expires_at INTEGER NOT NULL            -- epoch milliseconds
 ) WITHOUT ROWID;
 
--- Licences: the institutional rail (src/licences.js). One row per licence
--- issued to an institution. The key itself is never stored, only a SHA-256 of
--- it. A licence is revoked by stamping revoked_at; rows are never deleted, so
--- every usage count can always name its licence.
-CREATE TABLE IF NOT EXISTS licences (
-  id         TEXT PRIMARY KEY,             -- lic_ and 8 hex characters, shown on usage reports
-  licensee   TEXT NOT NULL,                -- the institution, as written on its licence
-  key_hash   TEXT NOT NULL UNIQUE,         -- SHA-256 hex of the dapk_ key
-  created_at TEXT NOT NULL,
-  revoked_at TEXT,
-  note       TEXT
-);
-
--- What each licence used, per UTC day and endpoint, for the invoice. Answered
--- calls to data tools and data endpoints only. No query, no address. Kept
--- for as long as invoices and audits need it.
-CREATE TABLE IF NOT EXISTS licence_usage_daily (
-  day        TEXT NOT NULL,                -- YYYY-MM-DD, UTC
-  licence_id TEXT NOT NULL,
-  endpoint   TEXT NOT NULL,                -- an MCP tool name, or api:search, api:recent, api:change
-  calls      INTEGER NOT NULL,
-  PRIMARY KEY (day, licence_id, endpoint)
-) WITHOUT ROWID;
+-- Licences live in their own database, dap-licences, bound as LICENCES by
+-- Bellwether and by the Compute Market Tracker agent: see licences.sql. The
+-- licence tables this file once created in the bellwether database are left
+-- in place, unused, as an archive of the self tests run before the move.

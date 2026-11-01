@@ -40,8 +40,19 @@ const FEED = `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
   </item>
 </channel></rss>`;
 
+/** The dap-licences database, as the LICENCES binding sees it. */
+function licenceDb() {
+  return new TestD1('licences.sql');
+}
+
+/**
+ * A bellwether database with one record, and its licence database attached as
+ * db.licences. The two are separate, as they are live: licence code that
+ * reached for env.DB would find no licence tables there.
+ */
 async function seededDb() {
   const db = new TestD1();
+  db.licences = licenceDb();
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(FEED, { status: 200 });
   try {
@@ -53,7 +64,7 @@ async function seededDb() {
 }
 
 function paidSettings(db, extra = {}) {
-  return { DB: db, X402_PAY_TO: PAY_TO, X402_NETWORKS: 'eip155:84532', ALLOWANCE_KEY, FREE_CALLS_PER_DAY: '2', ...extra };
+  return { DB: db, LICENCES: db.licences, X402_PAY_TO: PAY_TO, X402_NETWORKS: 'eip155:84532', ALLOWANCE_KEY, FREE_CALLS_PER_DAY: '2', ...extra };
 }
 
 function fakeFacilitator({ valid = true, settles = true } = {}) {
@@ -128,13 +139,13 @@ async function usage(db) {
 }
 
 async function licenceUsage(db) {
-  const { results } = await db.prepare('SELECT day, licence_id, endpoint, calls FROM licence_usage_daily ORDER BY endpoint').all();
+  const { results } = await db.licences.prepare('SELECT day, licence_id, endpoint, calls FROM licence_usage_daily ORDER BY endpoint').all();
   return results;
 }
 
 async function issue(db, licensee = 'Example Pension Plan') {
   const licence = newLicence();
-  await db.prepare(issueSql({ id: licence.id, licensee, keyHash: licence.keyHash, createdAt: new Date(NOW).toISOString() })).run();
+  await db.licences.prepare(issueSql({ id: licence.id, licensee, keyHash: licence.keyHash, createdAt: new Date(NOW).toISOString() })).run();
   return licence;
 }
 
@@ -395,7 +406,7 @@ test('an unknown, malformed or revoked DAP key is refused with 401, never answer
     assert.equal(json.error, 'invalid_licence');
     assert.match(response.headers.get('WWW-Authenticate'), /error="invalid_token"/);
   }
-  await db.prepare(revokeSql({ id: licence.id, revokedAt: new Date(NOW).toISOString() })).run();
+  await db.licences.prepare(revokeSql({ id: licence.id, revokedAt: new Date(NOW).toISOString() })).run();
   const revoked = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${licence.key}` } });
   assert.equal(revoked.response.status, 401);
   assert.deepEqual(await licenceUsage(db), []);
@@ -481,7 +492,7 @@ test('a licensed batch carrying a data call is refused, so every count is one an
 // ---------------------------------------------------------------- licence admin SQL
 
 test('licence SQL quotes names, refuses anything outside its patterns, and bills by month', async () => {
-  const db = new TestD1();
+  const db = licenceDb();
   const a = newLicence();
   assert.match(a.key, /^dapk_[A-Za-z0-9_-]{43}$/);
   assert.match(a.id, /^lic_[0-9a-f]{8}$/);
@@ -531,9 +542,11 @@ test('the OpenAPI document matches the router, and is served', async () => {
   assert.equal((await served.json()).info.title, 'DAP Bellwether API');
 });
 
-test('/health says whether the licence tables are in place', async () => {
-  const ready = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: new TestD1() }, context());
+test('/health says whether the licence database is bound and ready', async () => {
+  const ready = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: new TestD1(), LICENCES: licenceDb() }, context());
   assert.deepEqual((await ready.json()).licences, { status: 'ready' });
+  const unbound = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: new TestD1() }, context());
+  assert.deepEqual((await unbound.json()).licences, { status: 'missing' });
 });
 
 // ---------------------------------------------------------------- review round 1
@@ -557,7 +570,7 @@ async function mcpCall(env, body, headers = {}, facilitator = fakeFacilitator())
 
 test('since and until compare as times: a date covers its whole UTC day, offsets are honoured', async () => {
   const db = await seededDb(); // one record, published 2026-07-21T14:00:00.000Z
-  const env = { DB: db };
+  const env = { DB: db, LICENCES: db.licences };
   const count = async (q) => (await get(env, `/api/search?${q}`)).json.count;
   assert.equal(await count('until=2026-07-21'), 1, 'until a date includes that day');
   assert.equal(await count('since=2026-07-21'), 1, 'since a date starts that day');
@@ -617,7 +630,7 @@ test('a revoked key on /mcp gets 401', async () => {
   const db = await seededDb();
   const env = paidSettings(db);
   const licence = await issue(db);
-  await db.prepare(revokeSql({ id: licence.id, revokedAt: new Date(NOW).toISOString() })).run();
+  await db.licences.prepare(revokeSql({ id: licence.id, revokedAt: new Date(NOW).toISOString() })).run();
   const r = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, { Authorization: `Bearer ${licence.key}` });
   assert.equal(r.response.status, 401);
 });
@@ -635,7 +648,7 @@ test('a licensed MCP call that fails, and a licensed notification, are not count
 
 test('with the paid tier off, a licence still answers, is counted, and may batch like anyone', async () => {
   const db = await seededDb();
-  const env = { DB: db };
+  const env = { DB: db, LICENCES: db.licences };
   const licence = await issue(db);
   const auth = { Authorization: `Bearer ${licence.key}` };
   const api = await get(env, '/api/recent', { headers: auth });
@@ -676,13 +689,13 @@ test('a licence key with a payment header on /api is answered under the licence,
 
 test('with the licence tables missing, a key gets 503 and everyone else is unaffected', async () => {
   const db = await seededDb();
-  db.db.exec('DROP TABLE licences');
+  db.licences.db.exec('DROP TABLE licences');
   const env = paidSettings(db);
   const keyed = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${newLicence().key}` } });
   assert.equal(keyed.response.status, 503);
   assert.equal(keyed.json.error, 'licence_check_unavailable');
   assert.equal((await get(env, '/api/search?query=capital')).response.status, 402);
-  const health = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: db }, context());
+  const health = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: db, LICENCES: db.licences }, context());
   assert.deepEqual((await health.json()).licences, { status: 'missing' });
 });
 
@@ -690,7 +703,7 @@ test('a licensed answer that cannot be counted is withheld', async () => {
   const db = await seededDb();
   const env = paidSettings(db);
   const licence = await issue(db);
-  db.db.exec('DROP TABLE licence_usage_daily');
+  db.licences.db.exec('DROP TABLE licence_usage_daily');
   const api = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${licence.key}` } });
   assert.equal(api.response.status, 503);
   assert.equal(api.json.records, undefined);
@@ -718,7 +731,7 @@ test('a store failure while answering is a 503 that charges and counts nothing',
 });
 
 test('the usage report leaves out the self test licence', async () => {
-  const db = new TestD1();
+  const db = licenceDb();
   const real = newLicence();
   const self = newLicence();
   await db.prepare(issueSql({ id: real.id, licensee: 'Example Pension Plan', keyHash: real.keyHash, createdAt: '2026-11-01T00:00:00.000Z' })).run();
@@ -771,4 +784,71 @@ test('a DAP key with an upper case prefix is a licence attempt and is refused', 
     const mcp = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, headers);
     assert.equal(mcp.response.status, 401);
   }
+});
+
+// ---------------------------------------------------------------- review round 3
+
+test('licences live in their own database: schema.sql has no licence tables, licences.sql has only them', () => {
+  const tables = (d) => d.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((r) => r.name);
+  const main = tables(new TestD1());
+  assert.ok(!main.includes('licences') && !main.includes('licence_usage_daily'), 'the bellwether database holds no licences');
+  assert.deepEqual(tables(licenceDb()), ['licence_usage_daily', 'licences']);
+});
+
+test('with no licence database bound, a key gets 503 and everyone else is unaffected', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  delete env.LICENCES;
+  const keyed = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${newLicence().key}` } });
+  assert.equal(keyed.response.status, 503);
+  const mcp = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, { Authorization: `Bearer ${newLicence().key}` });
+  assert.equal(mcp.response.status, 503);
+  assert.equal((await get(env, '/api/search?query=capital')).response.status, 402);
+});
+
+test('a licensed batch with a data call needs a distinct string or number id on every call', async () => {
+  const db = await seededDb();
+  const env = { DB: db, LICENCES: db.licences };
+  const licence = await issue(db);
+  const auth = { Authorization: `Bearer ${licence.key}` };
+  const search = (id, args = {}) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: args } });
+  const missing = (id) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'get_regulatory_change', arguments: { id: 'missing' } } });
+  const refused = [
+    [missing(1), search(1)],
+    [search('a'), search('a')],
+    [search({ n: 1 }), search(2)],
+    [search(true)],
+    [search(1), { jsonrpc: '2.0', id: 1, method: 'tools/list' }],
+  ];
+  for (const batch of refused) {
+    const r = await mcpCall(env, batch, auth);
+    assert.equal(r.response.status, 400, JSON.stringify(batch.map((m) => m.id)));
+    assert.equal(r.json.error.code, -32600);
+  }
+  assert.deepEqual(await licenceUsage(db), [], 'nothing ran, nothing was counted');
+  // Distinct ids of either type, and notifications, are fine.
+  const ok = await mcpCall(env, [search(1), search('1', { query: 'capital' }), missing(2), { jsonrpc: '2.0', method: 'notifications/initialized' }], auth);
+  assert.equal(ok.response.status, 200);
+  assert.deepEqual((await licenceUsage(db)).map((r) => `${r.endpoint} ${r.calls}`), ['search_regulatory_changes 2']);
+});
+
+test('a licensed batch is counted in one transaction: if any count fails, none is kept and the batch is withheld', async () => {
+  const db = await seededDb();
+  const env = { DB: db, LICENCES: db.licences };
+  const licence = await issue(db);
+  const { results } = await db.prepare('SELECT id FROM changes').all();
+  db.licences.db.exec(
+    "CREATE TRIGGER refuse_get BEFORE INSERT ON licence_usage_daily WHEN NEW.endpoint = 'get_regulatory_change' BEGIN SELECT RAISE(ABORT, 'refused'); END;"
+  );
+  const r = await mcpCall(
+    env,
+    [
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_regulatory_change', arguments: { id: results[0].id } } },
+    ],
+    { Authorization: `Bearer ${licence.key}` }
+  );
+  assert.equal(r.response.status, 503);
+  assert.ok(!JSON.stringify(r.json).includes('capital adequacy'), 'no answer released');
+  assert.deepEqual(await licenceUsage(db), [], 'the search count was rolled back with the failed one');
 });

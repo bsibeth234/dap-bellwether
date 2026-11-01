@@ -14,7 +14,8 @@ what it does.
 | Canonical MCP endpoint | https://bellwether.dap.solutions/mcp |
 | Fallback URL | https://dap-bellwether.dap-solutions.workers.dev, kept enabled via `workers_dev = true` |
 | Custom domain bound | 2026-07-25. Creates one proxied DNS record for `bellwether` in the dap.solutions zone and its certificate. No other record in the zone was touched. |
-| D1 database name | bellwether |
+| D1 database names | `bellwether` (records, usage, payments) and `dap-licences` (licences only, `licences.sql`, shared with the Compute Market Tracker agent) |
+| `dap-licences` | Created 2026-11-01 about 16:35 UTC in the Cloudflare dashboard, id `e22f1525-8bf3-43f1-a6da-89ca00a475bc`, automatic location. Both tables from `licences.sql` added from the dashboard console and checked against `sqlite_master`. |
 | workers.dev subdomain | dap-solutions |
 | Cron | `0 */6 * * *`, every six hours |
 | First successful ingest | 2026-07-25, 10 of 10 sources, 117 records |
@@ -25,7 +26,7 @@ what it does.
 | Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
 | Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
 | Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per address per UTC day to the three data tools, then $0.01 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on, misconfigured or degraded. README, "The paid tier", has the switch-on steps. |
-| JSON API and licences | `src/api.js`, `src/licences.js`, `src/openapi.js`, `scripts/licence.mjs`. `GET /api/search`, `/api/recent`, `/api/change?id=` priced from the first call ($0.01, x402, Bazaar metadata on search and recent); `/api/coverage` free; OpenAPI at `/openapi.json`. Licence keys (`dapk_`) on `/mcp` and `/api` skip the allowance and x402 and are counted per licence per day in `licence_usage_daily` for invoicing. Needs `npm run db:migrate` for the `licences` tables; `/health` reports `licences.status`. |
+| JSON API and licences | `src/api.js`, `src/licences.js`, `src/openapi.js`, `scripts/licence.mjs`. `GET /api/search`, `/api/recent`, `/api/change?id=` priced from the first call ($0.01, x402, Bazaar metadata on search and recent); `/api/coverage` free; OpenAPI at `/openapi.json`. Licence keys (`dapk_`) on `/mcp` and `/api` skip the allowance and x402 and are counted per licence per day in `licence_usage_daily` for invoicing. Licences live in their own database, `dap-licences`, bound as `LICENCES` (`npm run db:migrate:licences`); `/health` reports `licences.status`. The licence tables left in the `bellwether` database hold only the self tests run before the move and are kept, unused, as an archive. |
 | Paid tier switched on | 2026-11-01 about 06:18 UTC, by Brendan running `scripts/switch-on.sh` on his Mac: CDP key checked with the facilitator, tables added, four secrets set, deploy version `61c5dd42-5ff9-4edd-af41-6eeeeec44bc1`, `/health` on, then from his Mac 50 of 50 searches free and call 51 priced at 10000 atomic USDC on Base to `0xa590d98bbee97533bd7dfed19c0a89ffeeeb1384`. Checked again from Chrome: `/health` on with 10 of 10 feeds, and the Claude connector still answers a search free. Off again: `npx wrangler secret delete X402_PAY_TO`. |
 
 ## The corrected endpoints
@@ -127,11 +128,28 @@ Two failures were ours rather than the regulators':
   the canonical path and refuses (500) any priced endpoint the gate would not
   price, so no spelling of a path can be answered free. Bad parameters are
   refused with 400 before any payment is asked for.
-- **A DAP key that is wrong answers 401, it never falls back.** Any header
+- **A DAP key that is wrong answers 401 on `/mcp` and the priced API, it
+  never falls back.** Any header
   mentioning `dapk_` is a licence attempt and must be exactly `Bearer <key>`
   or a bare `X-API-Key`; any other Authorization header is ignored and the
   free or paid rails apply as before. A licensed answer is counted before it
   is released, or withheld with 503.
+- **`dap-licences` holds the licences for all of DAP, and nothing else.**
+  Bellwether and the Compute Market Tracker agent (dap-solutions-site,
+  `workers/compute-agent`) both bind it as `LICENCES`; the tracker counts its
+  calls as `compute:...`. Neither binds the other's own database. A change to
+  `licences.sql` is a change to both services: copy it to
+  `workers/compute-agent/test/fixtures/licences.sql` too. Tests keep the two
+  databases apart (`new TestD1('licences.sql')`), so licence code that
+  reached for `env.DB` fails there.
+- **Run `licence.mjs check` a few seconds after a deploy.** Run straight
+  after `wrangler deploy`, it can still reach the old version at the edge and
+  fail; the second run passes. It checks both services, so run it once both
+  are deployed.
+- **A licensed batch needs distinct ids.** With the paid tier off a licensee
+  may batch; each call that expects an answer must carry a string or number
+  id no other call in the batch uses, so every answer matches one count, and
+  the batch's counts go in one D1 transaction before it is released.
 - **Keep record ids out of paid paths.** The gate sends the request path to
   the facilitator and strips the query, so anything a caller asked for goes
   in the query (`/api/change?id=`), never the path.

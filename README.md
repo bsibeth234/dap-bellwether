@@ -65,7 +65,7 @@ There is no free allowance on the API: people use the connector, and an agent ca
 
 ### Institutional licences
 
-Institutions can take a licence instead of paying per call: one agreement, one invoice, and a key for their agents, with no crypto wallet. The key (`dapk_` and 43 characters) is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on `/mcp` and `/api`. A licensed call skips the allowance and x402, and each answered call to a data tool or data endpoint adds one to the licence's daily count, which is what the invoice reads. An unknown or revoked key answers 401 rather than falling back to the free or paid rails, so a licensee finds out at once. A key in any other shape, or two different keys, is refused the same way. Any other `Authorization` header is ignored. Every licensed answer is counted before it is released; if the count cannot be written, the answer is withheld with 503. Keys are for the licensee's own servers and agents: the browser preflight does not allow these headers.
+Institutions can take a licence instead of paying per call: one agreement, one invoice, and a key for their agents, with no crypto wallet. One DAP licence also covers the Compute Market Tracker at `dap.solutions/compute/`. Licences live in their own D1 database, `dap-licences` (`licences.sql`), which both Workers bind as `LICENCES` and nothing else binds; the tracker counts its calls under endpoint names starting `compute:`, so one usage report covers both, and neither Worker can reach the other's records. The key (`dapk_` and 43 characters) is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on `/mcp` and `/api`. A licensed call skips the allowance and x402, and each answered call to a data tool or data endpoint adds one to the licence's daily count, which is what the invoice reads. On `/mcp` and the priced `/api` endpoints, an unknown or revoked key answers 401 rather than falling back to the free or paid rails, so a licensee finds out at once; `/api/coverage`, which is free, does not read keys. A key in any other shape, or two different keys, is refused the same way. A licensee may batch MCP calls while the paid tier is off, as anyone may, if every call in the batch carries a string or number id of its own; the batch's counts are written in one transaction before it is released. Any other `Authorization` header is ignored. Every licensed answer is counted before it is released; if the count cannot be written, the answer is withheld with 503. Keys are for the licensee's own servers and agents: the browser preflight does not allow these headers.
 
 ## Coverage
 
@@ -174,17 +174,17 @@ npx wrangler d1 execute bellwether --remote --command "SELECT * FROM tool_usage_
 
 ### Issuing licences
 
-Run on the Mac signed in to Cloudflare, from the repo root. `npm run db:migrate` first adds the `licences` and `licence_usage_daily` tables (it is safe to run again).
+Run on the Mac signed in to Cloudflare, from the repo root. The licence database is created once with `npx wrangler d1 create dap-licences`, its id goes in `wrangler.toml` here and in `workers/compute-agent/wrangler.toml` in dap-solutions-site, and `npm run db:migrate:licences` adds its two tables (it is safe to run again).
 
 ```bash
 node scripts/licence.mjs issue "Example Pension Plan" --note "Master licence 2026-11"   # prints the key once
 node scripts/licence.mjs list
 node scripts/licence.mjs usage 2026-11        # answered calls per licence and endpoint, for the invoice
 node scripts/licence.mjs revoke lic_1a2b3c4d  # the key answers 401 from then on; the record stays
-node scripts/licence.mjs check                # live proof: issues a test licence, calls /api and /mcp, revokes, expects 401
+node scripts/licence.mjs check                # live proof across Bellwether and the Compute Market Tracker: issue, call, revoke, expect 401
 ```
 
-The key is shown once and never stored, only its SHA-256 is. Give it to the licensee over a secure channel. If it is lost, issue a new one and revoke the old. Revoking never deletes, so past usage can still be billed. Add `--local` to work on the local database.
+The key is shown once and never stored, only its SHA-256 is. Give it to the licensee over a secure channel. If it is lost, issue a new one and revoke the old. Revoking never deletes, so past usage can still be billed. Add `--local` to work on the local database. Run `check` a few seconds after a deploy of either service: straight after `wrangler deploy` it can still reach the old version at the edge.
 
 ### Verifying it works
 

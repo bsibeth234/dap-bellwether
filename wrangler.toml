@@ -31,6 +31,15 @@ binding = "DB"
 database_name = "bellwether"
 database_id = "cb812950-20d4-45a1-b7c7-531ed0234e7b"
 
+# DAP licences, shared with the Compute Market Tracker agent and nothing else
+# (licences.sql). Created 2026-11-01 in the Cloudflare dashboard, tables added
+# from its console; npm run db:migrate:licences applies the same file again
+# safely.
+[[d1_databases]]
+binding = "LICENCES"
+database_name = "dap-licences"
+database_id = "e22f1525-8bf3-43f1-a6da-89ca00a475bc"
+
 [observability]
 enabled = true
 
