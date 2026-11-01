@@ -193,3 +193,5 @@ This section is kept word for word in step with the privacy section rendered on 
 ## Licence
 
 MIT. Use it, fork it, run your own. No lock-in.
+
+The page's fonts (Raleway, Archivo and JetBrains Mono) are self-hosted under the SIL Open Font License, with each licence in `licences/fonts/`. The DAP logo and the Bellwether photograph are DAP brand assets, from the dap.solutions site, and are not covered by the MIT licence.

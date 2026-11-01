@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker, { isFallbackHost } from '../src/index.js';
-import { renderLanding } from '../src/landing.js';
+import { renderLanding, renderConnectorNotice } from '../src/landing.js';
 import { enabledSources, SOURCES } from '../src/sources.js';
 
 const ORIGIN = 'https://bellwether.dap.solutions';
@@ -149,7 +149,7 @@ test('noindex is scoped to the page and never reaches the endpoint or the assets
   // content to begin with and should not be carrying SEO headers at all.
   const FALLBACK = 'https://dap-bellwether.dap-solutions.workers.dev';
 
-  for (const path of ['/health', '/favicon.ico', '/og.png', '/fonts/Archivo-600.ttf']) {
+  for (const path of ['/health', '/favicon.ico', '/og.jpg', '/fonts/Archivo-600.woff2', '/media/bellwether-1440.webp']) {
     const response = await get(path, FALLBACK);
     assert.equal(response.headers.get('X-Robots-Tag'), null, `${path} must not carry noindex`);
   }
@@ -179,11 +179,11 @@ test('the head declares the social card metadata', async () => {
   const body = await (await get('/')).text();
 
   assert.ok(
-    body.includes(`<meta property="og:image" content="${ORIGIN}/og.png">`),
+    body.includes(`<meta property="og:image" content="${ORIGIN}/og.jpg">`),
     'og:image must be an absolute URL on the origin the page was served from'
   );
   assert.match(body, /<meta name="twitter:card" content="summary_large_image">/);
-  assert.ok(body.includes(`<meta name="twitter:image" content="${ORIGIN}/og.png">`));
+  assert.ok(body.includes(`<meta name="twitter:image" content="${ORIGIN}/og.jpg">`));
 
   // og:url names the address the card should point at, which is a claim about
   // the service rather than about the host that answered. It follows the
@@ -196,7 +196,7 @@ test('the head declares the social card metadata', async () => {
   const onFallback = await (await get('/', 'https://dap-bellwether.dap-solutions.workers.dev')).text();
   assert.ok(onFallback.includes(canonical), 'og:url must not follow the fallback host');
   assert.ok(
-    onFallback.includes('<meta property="og:image" content="https://dap-bellwether.dap-solutions.workers.dev/og.png">'),
+    onFallback.includes('<meta property="og:image" content="https://dap-bellwether.dap-solutions.workers.dev/og.jpg">'),
     'the card image is still served by whichever host answered'
   );
 
@@ -208,23 +208,29 @@ test('the head declares the social card metadata', async () => {
   assert.match(body, /<meta property="og:image:height" content="630">/);
 });
 
-test('/og.png is served as a 1200x630 PNG with a long cache header', async () => {
-  const response = await get('/og.png');
+test('/og.jpg is served as a 1200x630 JPEG with a long cache header', async () => {
+  const response = await get('/og.jpg');
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('Content-Type'), 'image/png');
+  assert.equal(response.headers.get('Content-Type'), 'image/jpeg');
   assert.match(response.headers.get('Cache-Control'), /max-age=31536000/);
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const view = new DataView(bytes.buffer);
-  assert.deepEqual(
-    [...bytes.slice(0, 8)],
-    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
-    'must actually be a PNG'
-  );
-  // Dimensions live in the IHDR. A card at the wrong size gets cropped or
-  // rejected by the networks rather than failing loudly here.
-  assert.equal(view.getUint32(16), 1200, 'width');
-  assert.equal(view.getUint32(20), 630, 'height');
+  assert.deepEqual([...bytes.slice(0, 2)], [0xff, 0xd8], 'must actually be a JPEG');
+  // Dimensions live in the start-of-frame segment. A card at the wrong size
+  // gets cropped or rejected by the networks rather than failing loudly here.
+  let at = 2;
+  let size = null;
+  while (at < bytes.length - 9) {
+    if (bytes[at] !== 0xff) break;
+    const marker = bytes[at + 1];
+    const length = (bytes[at + 2] << 8) | bytes[at + 3];
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      size = { height: (bytes[at + 5] << 8) | bytes[at + 6], width: (bytes[at + 7] << 8) | bytes[at + 8] };
+      break;
+    }
+    at += 2 + length;
+  }
+  assert.deepEqual(size, { width: 1200, height: 630 });
 });
 
 test('icons, manifest and fonts are served with types and long cache headers', async () => {
@@ -233,7 +239,11 @@ test('icons, manifest and fonts are served with types and long cache headers', a
     ['/apple-touch-icon.png', 'image/png'],
     ['/icons/favicon-16.png', 'image/png'],
     ['/icons/favicon-512.png', 'image/png'],
-    ['/fonts/Archivo-600.ttf', 'font/ttf'],
+    ['/fonts/Archivo-600.woff2', 'font/woff2'],
+    ['/fonts/Raleway-300.woff2', 'font/woff2'],
+    ['/media/bellwether-960.webp', 'image/webp'],
+    ['/media/bellwether-1920.webp', 'image/webp'],
+    ['/brand/dap-logo-horizontal-carbon.svg', 'image/svg+xml'],
   ];
 
   for (const [path, type] of expected) {
@@ -289,4 +299,40 @@ test('renderLanding escapes rather than trusting registry text', () => {
   // single head and body.
   assert.equal(body.match(/<head>/g).length, 1);
   assert.equal(body.match(/<\/html>/g).length, 1);
+});
+
+test('the first screen says four things: name, headline, line and one action', async () => {
+  // DAP's one-screen language: the name small, one headline, one line on what
+  // the visitor gets, one button, over one photograph. Nothing else up there.
+  const body = await (await get('/')).text();
+  const first = body.slice(body.indexOf('<section class="one"'), body.indexOf('</section>') + 10);
+
+  assert.match(first, /<p class="meta one-name">DAP Bellwether<\/p>/);
+  assert.match(first, /<h1 id="page-title" class="disp one-title">Regulator updates from four jurisdictions, in one feed\.<\/h1>/);
+  assert.match(first, /<p class="one-line">Free\. No account, no key\.<\/p>/, 'free while the paid tier is off');
+  assert.equal((first.match(/class="btn/g) || []).length, 1, 'one action');
+  assert.match(first, /<a class="btn one-cta" href="#add">Add it to Claude/);
+  assert.match(first, /srcset="\/media\/bellwether-960\.webp 960w, \/media\/bellwether-1440\.webp 1440w, \/media\/bellwether-1920\.webp 1920w"/);
+  assert.match(first, /alt="Four slender concrete towers/);
+  assert.equal((body.match(/<h1/g) || []).length, 1, 'one h1 on the page');
+  assert.ok(body.includes('<section class="section" id="add"'), 'the button lands on the setup steps');
+});
+
+test('the headline counts jurisdictions from the registry', async () => {
+  const body = await (await get('/')).text();
+  const count = new Set(enabledSources().map((s) => s.jurisdiction)).size;
+  const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  assert.ok(body.includes(`Regulator updates from ${words[count]} jurisdictions, in one feed.`));
+});
+
+test('the page wears the 2026 brand, not the superseded Section one', async () => {
+  for (const html of [await (await get('/')).text(), renderConnectorNotice(ORIGIN)]) {
+    assert.ok(!/Hanken/i.test(html), 'no Hanken Grotesk');
+    assert.ok(!/#F1F1ED/i.test(html), 'no Section paper');
+    assert.ok(!/repeating-linear-gradient/.test(html), 'no blueprint grid');
+    assert.ok(html.includes('/brand/dap-logo-horizontal-carbon.svg'), 'the supplied DAP lockup');
+    assert.ok(/fonts\/Raleway-300\.woff2/.test(html) && /fonts\/Archivo-400\.woff2/.test(html));
+    assert.ok(!/fonts\.googleapis|fonts\.gstatic/.test(html), 'fonts are self hosted');
+    assert.doesNotMatch(html, /[\u2013\u2014]/);
+  }
 });
