@@ -181,6 +181,7 @@ node scripts/licence.mjs issue "Example Pension Plan" --note "Master licence 202
 node scripts/licence.mjs list
 node scripts/licence.mjs usage 2026-11        # answered calls per licence and endpoint, for the invoice
 node scripts/licence.mjs revoke lic_1a2b3c4d  # the key answers 401 from then on; the record stays
+node scripts/licence.mjs check                # live proof: issues a test licence, calls /api and /mcp, revokes, expects 401
 ```
 
 The key is shown once and never stored, only its SHA-256 is. Give it to the licensee over a secure channel. If it is lost, issue a new one and revoke the old. Revoking never deletes, so past usage can still be billed. Add `--local` to work on the local database.

@@ -7,6 +7,7 @@
  *   node scripts/licence.mjs revoke lic_1a2b3c4d
  *   node scripts/licence.mjs list
  *   node scripts/licence.mjs usage 2026-11
+ *   node scripts/licence.mjs check        live self test: issue, call /api and /mcp, revoke, expect 401
  *
  * Add --local to work on the local database instead of the live one.
  *
@@ -17,6 +18,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import dns from 'node:dns';
+import net from 'node:net';
 import { issueSql, listSql, newLicence, revokeSql, usageSql } from './licence-sql.mjs';
 
 const args = process.argv.slice(2);
@@ -53,7 +56,7 @@ function table(rows, columns) {
 }
 
 function usage() {
-  console.error('Usage: node scripts/licence.mjs issue "Licensee" [--note "..."] | revoke lic_xxxxxxxx | list | usage YYYY-MM  [--local]');
+  console.error('Usage: node scripts/licence.mjs issue "Licensee" [--note "..."] | revoke lic_xxxxxxxx | list | usage YYYY-MM | check  [--local]');
   process.exit(1);
 }
 
@@ -96,10 +99,66 @@ try {
       console.log('Totals:');
       for (const [licensee, calls] of totals) console.log(`  ${licensee}: ${calls}`);
     }
+  } else if (command === 'check') {
+    await selfTest();
   } else {
     usage();
   }
 } catch (err) {
   console.error(`Stopped: ${err && err.message ? err.message : String(err)}`);
   process.exit(1);
+}
+
+/**
+ * The live proof of the licence rail, run from this Mac. Issues a licence
+ * named "DAP licence self test", calls the API and the connector with its key,
+ * revokes it, and checks the key is then refused. The key is never printed.
+ * The revoked licence and its two counted calls stay on record, by design.
+ */
+async function selfTest() {
+  // IPv6 from at least one dev machine cannot reach the Worker (CLAUDE.md).
+  dns.setDefaultResultOrder('ipv4first');
+  net.setDefaultAutoSelectFamily(false);
+  // --local checks a wrangler dev Worker on the local database instead.
+  const origin = local ? process.env.BELLWETHER_ORIGIN || 'http://127.0.0.1:8787' : 'https://bellwether.dap.solutions';
+  const licence = newLicence();
+  d1(issueSql({ id: licence.id, licensee: 'DAP licence self test', keyHash: licence.keyHash, createdAt: new Date().toISOString(), note: 'scripts/licence.mjs check' }));
+  const auth = { Authorization: `Bearer ${licence.key}` };
+  const results = [];
+  const check = (label, ok, detail) => {
+    results.push(ok);
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` (${detail})` : ''}`);
+  };
+  try {
+    const unpaid = await fetch(`${origin}/api/search?query=capital&limit=1`);
+    check('without a key, /api/search asks for payment', unpaid.status === 402, `HTTP ${unpaid.status}`);
+
+    const api = await fetch(`${origin}/api/search?query=capital&limit=1`, { headers: auth });
+    const apiBody = api.ok ? await api.json() : null;
+    check('with the key, /api/search answers without payment', api.status === 200 && apiBody && Array.isArray(apiBody.records), `HTTP ${api.status}`);
+
+    const mcp = await fetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recent_regulatory_changes', arguments: { days: 7, limit: 1 } } }),
+    });
+    const mcpText = await mcp.text();
+    check('with the key, /mcp answers a data tool', mcp.status === 200 && mcpText.includes('"result"') && !mcpText.includes('"isError":true'), `HTTP ${mcp.status}`);
+  } finally {
+    d1(revokeSql({ id: licence.id, revokedAt: new Date().toISOString() }));
+  }
+  const after = await fetch(`${origin}/api/search?query=capital&limit=1`, { headers: auth });
+  check('after revoking, the key is refused', after.status === 401, `HTTP ${after.status}`);
+
+  // Counts are written just after each answer goes out, so give them a moment.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const counted = d1(
+    `SELECT endpoint, calls FROM licence_usage_daily WHERE licence_id = '${licence.id}' ORDER BY endpoint;`
+  );
+  const total = counted.reduce((n, r) => n + Number(r.calls), 0);
+  check('both answered calls were counted for the invoice', total === 2, counted.map((r) => `${r.endpoint} ${r.calls}`).join(', ') || 'none');
+
+  console.log('');
+  console.log(results.every(Boolean) ? `All checks passed. Self test licence ${licence.id} is revoked and kept on record.` : 'Some checks failed. Send this output to Claude.');
+  if (!results.every(Boolean)) process.exitCode = 1;
 }
