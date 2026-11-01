@@ -128,7 +128,13 @@ Use `--remote` rather than plain `wrangler dev`. Local `workerd` cannot reach ev
 
 The payment code in `src/x402/` is the DAP Agent Payments library, vendored unchanged from the Foundry payment edge (`src/x402/VENDORED.md` records the source and the hash of every file). Bellwether wraps it in `src/payments.js` with the daily allowance, and `src/pricing.js` decides from the settings whether the tier is on.
 
-It is off until `X402_PAY_TO` is set. Switching it on is settings, not code:
+It is off until `X402_PAY_TO` is set. Switching it on is settings, not code, and one script does it in order, checking each step:
+
+```bash
+bash scripts/switch-on.sh      # tests, CDP key check, tables, secrets (wallet last), deploy, /health, paywall
+```
+
+It asks for the receiving wallet and a Coinbase CDP API key, checks the key with the facilitator before storing anything, and ends by proving the paywall from the machine it runs on: 50 free calls, then call 51 asks for one cent. By hand, the same steps are:
 
 ```bash
 npm run db:migrate                                     # adds allowance_counts, payment_claims and tool_usage_daily
