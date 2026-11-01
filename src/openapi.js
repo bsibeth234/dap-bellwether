@@ -115,8 +115,8 @@ export function openApiDocument() {
             jurisdiction,
             { name: 'regulator', in: 'query', required: false, description: 'Short name, for example OSFI, SEC, FCA, ESMA.', schema: { type: 'string', maxLength: 20 } },
             { name: 'category', in: 'query', required: false, description: 'Publication type.', schema: { type: 'string', enum: CATEGORIES } },
-            { name: 'since', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive.', schema: { type: 'string' } },
-            { name: 'until', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive.', schema: { type: 'string' } },
+            { name: 'since', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A date alone starts at 00:00 UTC that day. A time without a zone is UTC.', schema: { type: 'string' } },
+            { name: 'until', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A date alone runs to the end of that UTC day. A time without a zone is UTC.', schema: { type: 'string' } },
             limit(20),
           ],
           responses: {
@@ -141,12 +141,12 @@ export function openApiDocument() {
           },
         },
       },
-      '/api/changes/{id}': {
+      '/api/change': {
         get: {
           operationId: 'getRegulatoryChange',
           summary: 'One record in full, with every revision observed since first collection.',
           description: `${PRICE} per call. A record that does not exist answers 404 and is never charged.`,
-          parameters: [{ name: 'id', in: 'path', required: true, description: 'Record id from a search or recent result.', schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
+          parameters: [{ name: 'id', in: 'query', required: true, description: 'Record id from a search or recent result.', schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
           responses: {
             '200': {
               description: 'The record and its revisions, oldest first.',

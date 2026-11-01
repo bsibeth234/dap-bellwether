@@ -151,10 +151,8 @@ test('every priced endpoint the router resolves is on the gate price list, in ev
     '/api/./search',
     '/api/%73earch',
     '/api/recent',
-    '/api/changes/0123456789abcdef0123456789abcdef',
-    '/api/changes',
-    '/api/changes/',
-    '/api/CHANGES/x/y',
+    '/api/change',
+    '/API/Change/',
     '/api/search/../recent',
   ];
   for (const path of spellings) {
@@ -212,9 +210,11 @@ test('a bad request is refused before any payment is asked for, and never charge
     '/api/search?category=memes',
     '/api/recent?days=0',
     '/api/recent?query=capital',
-    '/api/changes/nothex',
-    '/api/changes',
-    '/api/changes/0123456789abcdef0123456789abcdef?x=1',
+    '/api/change?id=nothex',
+    '/api/change',
+    '/api/change?id=0123456789abcdef0123456789abcdef&x=1',
+    '/api/search?since=2026-02-30',
+    '/api/search?until=2026-13-01',
   ];
   for (const path of bad) {
     const { response, json, facilitator } = await get(env, path);
@@ -282,7 +282,7 @@ test('a payment the facilitator refuses gets the price again, and nothing runs',
 test('a record that does not exist answers 404 and is never charged', async () => {
   const db = await seededDb();
   const env = paidSettings(db);
-  const path = '/api/changes/0123456789abcdef0123456789abcdef';
+  const path = '/api/change?id=0123456789abcdef0123456789abcdef';
   const first = await get(env, path);
   assert.equal(first.response.status, 402);
   const facilitator = fakeFacilitator();
@@ -295,7 +295,7 @@ test('a record is answered in full with its revisions once paid', async () => {
   const db = await seededDb();
   const env = paidSettings(db);
   const { results } = await db.prepare('SELECT id FROM changes').all();
-  const path = `/api/changes/${results[0].id}`;
+  const path = `/api/change?id=${results[0].id}`;
   const first = await get(env, path);
   const { response, json } = await get(env, path, { headers: { 'PAYMENT-SIGNATURE': paymentHeader(first.response, { nonce: '66' }) } });
   assert.equal(response.status, 200);
@@ -378,7 +378,7 @@ test('a licensed call that fails is not counted', async () => {
   const env = paidSettings(db);
   const licence = await issue(db);
   const auth = { Authorization: `Bearer ${licence.key}` };
-  assert.equal((await get(env, '/api/changes/0123456789abcdef0123456789abcdef', { headers: auth })).response.status, 404);
+  assert.equal((await get(env, '/api/change?id=0123456789abcdef0123456789abcdef', { headers: auth })).response.status, 404);
   assert.equal((await get(env, '/api/search?limit=0', { headers: auth })).response.status, 400);
   assert.deepEqual(await licenceUsage(db), []);
 });
@@ -503,23 +503,24 @@ test('the OpenAPI document matches the router, and is served', async () => {
   const doc = openApiDocument();
   assert.equal(doc.openapi, '3.1.0');
   const paths = Object.keys(doc.paths);
-  assert.deepEqual(paths.sort(), ['/api/changes/{id}', '/api/coverage', '/api/recent', '/api/search']);
-  for (const path of paths) {
-    const concrete = path.replace('{id}', '0123456789abcdef0123456789abcdef');
-    assert.ok(resolveEndpoint(canonicalPath(concrete)), `${path} is routed`);
-  }
-  for (const endpoint of API_ENDPOINTS) {
-    const documented = endpoint.path.replace('/*', '/{id}');
-    assert.ok(doc.paths[documented], `${endpoint.path} is documented`);
-  }
+  assert.deepEqual(paths.sort(), ['/api/change', '/api/coverage', '/api/recent', '/api/search']);
+  for (const path of paths) assert.ok(resolveEndpoint(canonicalPath(path)), `${path} is routed`);
+  for (const endpoint of API_ENDPOINTS) assert.ok(doc.paths[endpoint.path], `${endpoint.path} is documented`);
   // Every documented query parameter is one the router accepts.
   for (const [path, item] of Object.entries(doc.paths)) {
-    const endpoint = resolveEndpoint(canonicalPath(path.replace('{id}', '0123456789abcdef0123456789abcdef')));
+    const endpoint = resolveEndpoint(canonicalPath(path));
+    const sample = (p) =>
+      p.schema.enum ? p.schema.enum[0] : p.schema.type === 'integer' ? '5' : p.name === 'since' || p.name === 'until' ? '2026-10-01' : p.name === 'id' ? '0123456789abcdef0123456789abcdef' : 'capital';
+    const all = new URLSearchParams();
     for (const p of item.get.parameters || []) {
       if (p.in !== 'query') continue;
-      const params = new URLSearchParams({ [p.name]: p.schema.enum ? p.schema.enum[0] : p.schema.type === 'integer' ? '5' : p.name === 'since' || p.name === 'until' ? '2026-10-01' : 'capital' });
-      assert.ok(!parseParams(endpoint, params).error, `${path} accepts ${p.name}`);
+      all.set(p.name, sample(p));
+      if (p.required) continue;
+      const one = new URLSearchParams(endpoint.name === 'change' ? { id: '0123456789abcdef0123456789abcdef' } : {});
+      one.set(p.name, sample(p));
+      assert.ok(!parseParams(endpoint, one).error, `${path} accepts ${p.name}`);
     }
+    assert.ok(!parseParams(endpoint, all).error, `${path} accepts all its documented parameters together`);
   }
   const text = JSON.stringify(doc);
   assert.ok(!/[\u2013\u2014]/.test(text), 'no en or em dash');
@@ -532,4 +533,182 @@ test('the OpenAPI document matches the router, and is served', async () => {
 test('/health says whether the licence tables are in place', async () => {
   const ready = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: new TestD1() }, context());
   assert.deepEqual((await ready.json()).licences, { status: 'ready' });
+});
+
+// ---------------------------------------------------------------- review round 1
+
+async function mcpCall(env, body, headers = {}, facilitator = fakeFacilitator()) {
+  const ctx = context();
+  const response = await handleMcp(
+    new Request(`${ORIGIN}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.7', ...headers },
+      body: JSON.stringify(body),
+    }),
+    env,
+    ctx,
+    { facilitator, now: () => NOW }
+  );
+  await Promise.all(ctx.jobs);
+  const text = await response.text();
+  return { response, json: text ? JSON.parse(text) : null };
+}
+
+test('since and until compare as times: a date covers its whole UTC day, offsets are honoured', async () => {
+  const db = await seededDb(); // one record, published 2026-07-21T14:00:00.000Z
+  const env = { DB: db };
+  const count = async (q) => (await get(env, `/api/search?${q}`)).json.count;
+  assert.equal(await count('until=2026-07-21'), 1, 'until a date includes that day');
+  assert.equal(await count('since=2026-07-21'), 1, 'since a date starts that day');
+  assert.equal(await count('since=2026-07-22'), 0);
+  assert.equal(await count('until=2026-07-20'), 0);
+  assert.equal(await count('since=2026-07-21T14:00:00Z'), 1, 'an exact instant is included');
+  assert.equal(await count('since=2026-07-21T15:00:00%2B02:00'), 1, '15:00 at +02:00 is 13:00 UTC');
+  assert.equal(await count('since=2026-07-21T14:00:01Z'), 0);
+  assert.equal(await count('until=2026-07-21T14:00'), 1, 'a time without a zone is UTC');
+  // The connector applies the same rule.
+  const r = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: { until: '2026-07-21' } } });
+  assert.match(r.json.result.content[0].text, /capital adequacy/);
+  const bad = await mcpCall(env, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: { since: 'yesterday' } } });
+  assert.equal(bad.json.result.isError, true);
+});
+
+test('the record id never reaches the payment facilitator', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const { results } = await db.prepare('SELECT id FROM changes').all();
+  const path = `/api/change?id=${results[0].id}`;
+  const first = await get(env, path);
+  const facilitator = fakeFacilitator();
+  const paid = await get(env, path, { headers: { 'PAYMENT-SIGNATURE': paymentHeader(first.response, { nonce: '88' }) }, facilitator });
+  assert.equal(paid.response.status, 200);
+  const sent = JSON.stringify([facilitator.seen.verify, facilitator.seen.settle]);
+  assert.ok(!sent.includes(results[0].id), 'no record id in anything sent to the facilitator');
+  assert.equal(facilitator.seen.verify[0].payload.resource.url, `${ORIGIN}/api/change`);
+});
+
+test('a DAP key in any other shape, or two different keys, is refused, never answered under another rail', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const good = await issue(db);
+  const other = await issue(db, 'Second Bank');
+  const shapes = [
+    { Authorization: good.key },
+    { Authorization: `Token ${good.key}` },
+    { Authorization: `Bearer ${good.key} x` },
+    { Authorization: `Bearer ${good.key}, Bearer ${other.key}` },
+    { 'X-API-Key': `Bearer ${good.key}` },
+    { Authorization: `Bearer ${good.key}`, 'X-API-Key': other.key },
+  ];
+  for (const headers of shapes) {
+    const api = await get(env, '/api/search?query=capital', { headers });
+    assert.equal(api.response.status, 401, JSON.stringify(Object.keys(headers)));
+    const mcp = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, headers);
+    assert.equal(mcp.response.status, 401);
+  }
+  // The same key in both headers is fine.
+  const both = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${good.key}`, 'X-API-Key': good.key } });
+  assert.equal(both.response.status, 200);
+  assert.deepEqual((await licenceUsage(db)).map((r) => `${r.licence_id} ${r.calls}`), [`${good.id} 1`]);
+});
+
+test('a revoked key on /mcp gets 401', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  await db.prepare(revokeSql({ id: licence.id, revokedAt: new Date(NOW).toISOString() })).run();
+  const r = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, { Authorization: `Bearer ${licence.key}` });
+  assert.equal(r.response.status, 401);
+});
+
+test('a licensed MCP call that fails, and a licensed notification, are not counted', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  const auth = { Authorization: `Bearer ${licence.key}` };
+  const failed = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_regulatory_change', arguments: { id: 'missing' } } }, auth);
+  assert.equal(failed.json.result.isError, true);
+  await mcpCall(env, { jsonrpc: '2.0', method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, auth);
+  assert.deepEqual(await licenceUsage(db), []);
+});
+
+test('with the paid tier off, a licence still answers, is counted, and may batch like anyone', async () => {
+  const db = await seededDb();
+  const env = { DB: db };
+  const licence = await issue(db);
+  const auth = { Authorization: `Bearer ${licence.key}` };
+  const api = await get(env, '/api/recent', { headers: auth });
+  assert.equal(api.response.status, 200);
+  const batch = await mcpCall(env, [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }], auth);
+  assert.equal(batch.response.status, 200);
+  assert.deepEqual((await licenceUsage(db)).map((r) => `${r.endpoint} ${r.calls}`), ['api:recent 1']);
+});
+
+test('a licence key with a payment header on /api is answered under the licence, never settled', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  const first = await get(env, '/api/search?query=capital');
+  const facilitator = fakeFacilitator();
+  const r = await get(env, '/api/search?query=capital', {
+    headers: { Authorization: `Bearer ${licence.key}`, 'PAYMENT-SIGNATURE': paymentHeader(first.response, { nonce: '99' }) },
+    facilitator,
+  });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.response.headers.get('PAYMENT-RESPONSE'), null);
+  assert.equal(facilitator.seen.verify.length + facilitator.seen.settle.length, 0);
+});
+
+test('with the licence tables missing, a key gets 503 and everyone else is unaffected', async () => {
+  const db = await seededDb();
+  db.db.exec('DROP TABLE licences');
+  const env = paidSettings(db);
+  const keyed = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${newLicence().key}` } });
+  assert.equal(keyed.response.status, 503);
+  assert.equal(keyed.json.error, 'licence_check_unavailable');
+  assert.equal((await get(env, '/api/search?query=capital')).response.status, 402);
+  const health = await worker.fetch(new Request(`${ORIGIN}/health`), { DB: db }, context());
+  assert.deepEqual((await health.json()).licences, { status: 'missing' });
+});
+
+test('a licensed answer that cannot be counted is withheld', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  db.db.exec('DROP TABLE licence_usage_daily');
+  const api = await get(env, '/api/search?query=capital', { headers: { Authorization: `Bearer ${licence.key}` } });
+  assert.equal(api.response.status, 503);
+  assert.equal(api.json.records, undefined);
+  const mcp = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, { Authorization: `Bearer ${licence.key}` });
+  assert.equal(mcp.response.status, 503);
+  assert.equal(mcp.json.result, undefined);
+});
+
+test('a store failure while answering is a 503 that charges and counts nothing', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  const { results } = await db.prepare('SELECT id FROM changes').all();
+  db.db.exec('DROP TABLE change_revisions');
+  const path = `/api/change?id=${results[0].id}`;
+  const licensed = await get(env, path, { headers: { Authorization: `Bearer ${licence.key}` } });
+  assert.equal(licensed.response.status, 503);
+  assert.equal(licensed.json.error, 'service_unavailable');
+  const first = await get(env, path);
+  const facilitator = fakeFacilitator();
+  const paid = await get(env, path, { headers: { 'PAYMENT-SIGNATURE': paymentHeader(first.response, { nonce: 'aa' }) }, facilitator });
+  assert.equal(paid.response.status, 503);
+  assert.equal(facilitator.seen.settle.length, 0);
+  assert.deepEqual(await licenceUsage(db), []);
+});
+
+test('the usage report leaves out the self test licence', async () => {
+  const db = new TestD1();
+  const real = newLicence();
+  const self = newLicence();
+  await db.prepare(issueSql({ id: real.id, licensee: 'Example Pension Plan', keyHash: real.keyHash, createdAt: '2026-11-01T00:00:00.000Z' })).run();
+  await db.prepare(issueSql({ id: self.id, licensee: 'DAP licence self test', keyHash: self.keyHash, createdAt: '2026-11-01T00:00:00.000Z' })).run();
+  await db.prepare("INSERT INTO licence_usage_daily (day, licence_id, endpoint, calls) VALUES ('2026-11-02', ?, 'api:search', 3), ('2026-11-02', ?, 'api:search', 2)").bind(real.id, self.id).run();
+  const bill = (await db.prepare(usageSql({ month: '2026-11' })).all()).results;
+  assert.deepEqual(bill.map((r) => `${r.licensee} ${r.calls}`), ['Example Pension Plan 3']);
 });

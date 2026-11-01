@@ -93,7 +93,10 @@ export const API_ENDPOINTS = Object.freeze([
     tool: 'recent_regulatory_changes',
     discovery: { input: { method: 'GET', queryParams: { days: '7', limit: '5' } }, output: { type: 'json' } },
   },
-  { name: 'change', path: '/api/changes/*', tool: 'get_regulatory_change' },
+  // The id is a query parameter, not part of the path: the gate sends the
+  // path to the payment facilitator and strips the query, so the record a
+  // caller asked for never reaches Coinbase.
+  { name: 'change', path: '/api/change', tool: 'get_regulatory_change' },
 ]);
 
 function apiRoutes() {

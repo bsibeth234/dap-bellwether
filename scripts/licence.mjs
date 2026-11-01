@@ -20,7 +20,7 @@
 import { execFileSync } from 'node:child_process';
 import dns from 'node:dns';
 import net from 'node:net';
-import { issueSql, listSql, newLicence, revokeSql, usageSql } from './licence-sql.mjs';
+import { SELF_TEST_LICENSEE, issueSql, listSql, newLicence, revokeSql, usageSql } from './licence-sql.mjs';
 
 const args = process.argv.slice(2);
 const local = args.includes('--local');
@@ -113,7 +113,8 @@ try {
  * The live proof of the licence rail, run from this Mac. Issues a licence
  * named "DAP licence self test", calls the API and the connector with its key,
  * revokes it, and checks the key is then refused. The key is never printed.
- * The revoked licence and its two counted calls stay on record, by design.
+ * The revoked licence and its two counted calls stay on record, by design,
+ * and the usage report leaves them out.
  */
 async function selfTest() {
   // IPv6 from at least one dev machine cannot reach the Worker (CLAUDE.md).
@@ -122,7 +123,7 @@ async function selfTest() {
   // --local checks a wrangler dev Worker on the local database instead.
   const origin = local ? process.env.BELLWETHER_ORIGIN || 'http://127.0.0.1:8787' : 'https://bellwether.dap.solutions';
   const licence = newLicence();
-  d1(issueSql({ id: licence.id, licensee: 'DAP licence self test', keyHash: licence.keyHash, createdAt: new Date().toISOString(), note: 'scripts/licence.mjs check' }));
+  d1(issueSql({ id: licence.id, licensee: SELF_TEST_LICENSEE, keyHash: licence.keyHash, createdAt: new Date().toISOString(), note: 'scripts/licence.mjs check' }));
   const auth = { Authorization: `Bearer ${licence.key}` };
   const results = [];
   const check = (label, ok, detail) => {

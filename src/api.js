@@ -4,7 +4,7 @@
  *
  *   GET /api/search        priced from the first call
  *   GET /api/recent        priced from the first call
- *   GET /api/changes/{id}  priced from the first call
+ *   GET /api/change?id=    priced from the first call
  *   GET /api/coverage      free
  *
  * Three ways to be answered, checked in this order:
@@ -23,9 +23,9 @@ import { canonicalPath } from './x402/path.ts';
 import { decodeHeader, encodeHeader } from './x402/codec.ts';
 import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun } from './db.js';
 import { JURISDICTIONS, SOURCES, enabledSources } from './sources.js';
-import { CATEGORIES, JURISDICTION_CODES } from './tools.js';
+import { CATEGORIES, JURISDICTION_CODES, dateBound } from './tools.js';
 import { API_ENDPOINTS, pricingFor } from './pricing.js';
-import { licenceRefused, licenceUnavailable, noteLicenceUsage, readLicence } from './licences.js';
+import { countLicensedCall, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
 import { MAX_PAYMENT_VALIDITY_SECONDS, recordUsage, utcDay } from './payments.js';
 
 const NOTICE = 'This is a public information service. It is not legal or compliance advice.';
@@ -58,9 +58,9 @@ export function resolveEndpoint(canonical) {
       if (canonical === endpoint.path) return { name: endpoint.name, tool: endpoint.tool };
       continue;
     }
-    const prefix = endpoint.path.slice(0, -1); // '/api/changes/'
-    if (canonical === prefix.slice(0, -1)) return { name: endpoint.name, tool: endpoint.tool, id: '' };
-    if (canonical.startsWith(prefix)) return { name: endpoint.name, tool: endpoint.tool, id: canonical.slice(prefix.length) };
+    // A wildcard endpoint covers its directory and everything under it, as the gate prices it.
+    const prefix = endpoint.path.slice(0, -1);
+    if (canonical === prefix.slice(0, -1) || canonical.startsWith(prefix)) return { name: endpoint.name, tool: endpoint.tool };
   }
   return null;
 }
@@ -84,10 +84,8 @@ export function pricedByGate(gateRoutes, canonical) {
 const ALLOWED = {
   search: ['query', 'jurisdiction', 'regulator', 'category', 'since', 'until', 'limit'],
   recent: ['jurisdiction', 'days', 'limit'],
-  change: [],
+  change: ['id'],
 };
-
-const DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
 
 function wholeNumber(raw, name, min, max) {
   if (!/^\d{1,4}$/.test(raw)) return { error: `${name} must be a whole number from ${min} to ${max}.` };
@@ -120,10 +118,11 @@ export function parseParams(endpoint, searchParams) {
   const params = {};
 
   if (endpoint.name === 'change') {
-    if (!/^[0-9a-f]{32}$/.test(endpoint.id || '')) {
-      return { error: 'The record id is 32 lower case hexadecimal characters, from a search or recent result.' };
+    const id = get('id');
+    if (id === null || !/^[0-9a-f]{32}$/.test(id)) {
+      return { error: 'id is required: 32 lower case hexadecimal characters, from a search or recent result.' };
     }
-    params.id = endpoint.id;
+    params.id = id;
     return { params };
   }
 
@@ -168,10 +167,9 @@ export function parseParams(endpoint, searchParams) {
   for (const key of ['since', 'until']) {
     const value = get(key);
     if (value === null) continue;
-    if (!DATE.test(value) || Number.isNaN(Date.parse(value))) {
-      return { error: `${key} must be an ISO 8601 date or timestamp, for example 2026-10-01.` };
-    }
-    params[key] = value;
+    const bound = dateBound(value, key);
+    if (bound === null) return { error: `${key} must be an ISO 8601 date or timestamp, for example 2026-10-01.` };
+    params[key] = bound;
   }
   return { params };
 }
@@ -303,6 +301,12 @@ async function priceWithError(request, gate, code) {
   return new Response(JSON.stringify(body), { status: response.status, headers: out });
 }
 
+/** A 503 for a request the service could not answer. Nothing was charged or counted. */
+function unanswerable(err) {
+  console.error(`Bellwether API could not answer: ${err && err.message ? err.message : String(err)}`);
+  return json({ error: 'service_unavailable', message: 'The service could not answer. Nothing was charged. Retry shortly.' }, 503, { 'Retry-After': '2' });
+}
+
 function outcomeOf(response, paying) {
   if (response.status === 402) return 'challenged';
   if (response.status < 400 && response.headers.has('PAYMENT-RESPONSE')) return 'paid';
@@ -352,11 +356,16 @@ export async function handleApi(request, env, ctx, overrides) {
     if (licence.status === 'invalid') return licenceRefused();
     if (licence.status === 'unavailable') return licenceUnavailable();
     if (licence.status === 'valid') {
-      const response = await answer(endpoint, params, env);
-      if (response.status < 400) {
-        noteLicenceUsage(env, ctx, day, licence.licence.id, tool);
-        note(env, ctx, day, tool, 'licensed');
+      let response;
+      try {
+        response = await answer(endpoint, params, env);
+      } catch (err) {
+        return unanswerable(err);
       }
+      if (response.status >= 400) return response;
+      // Every licensed answer is counted before it is released, or not released.
+      if (!(await countLicensedCall(env.DB, day, licence.licence.id, tool))) return licenceUnavailable();
+      note(env, ctx, day, tool, 'licensed');
       return response;
     }
   }
@@ -366,7 +375,11 @@ export async function handleApi(request, env, ctx, overrides) {
     // With the paid tier off, nothing is charged anywhere.
     if (method === 'GET') {
       note(env, ctx, day, tool, 'unmetered');
-      return answer(endpoint, params, env);
+      try {
+        return await answer(endpoint, params, env);
+      } catch (err) {
+        return unanswerable(err);
+      }
     }
     if (method === 'OPTIONS') {
       return new Response(null, {
@@ -393,10 +406,10 @@ export async function handleApi(request, env, ctx, overrides) {
   try {
     response = await pricing.gate.handle(request, () => answer(endpoint, params, env));
   } catch (err) {
-    // Only the claim can throw here (claims.js swallows a failed release),
-    // and it is taken before verification: nothing ran and nothing was charged.
-    console.error(`Bellwether payment claim failed: ${err && err.message ? err.message : String(err)}`);
-    return json({ error: 'payment_unavailable', message: 'Payment service unavailable. Retry shortly.' }, 503, { 'Retry-After': '2' });
+    // The claim (taken before verification) or the answer threw. The gate
+    // releases the claim when the answer throws and settles nothing, so
+    // nothing was charged.
+    return unanswerable(err);
   }
   if (method === 'GET') note(env, ctx, day, tool, outcomeOf(response, signature !== null));
   return response;

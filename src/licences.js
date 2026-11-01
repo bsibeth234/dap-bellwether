@@ -4,16 +4,18 @@
  * A bank or a pension plan does not pay per call in USDC. It signs a licence
  * with DAP, receives a key for its agents, and is invoiced for what it used.
  * The key is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on
- * /mcp and on the JSON API. A valid key answers without the free allowance
- * and without x402; every answered call to a data tool or data endpoint adds
- * one to that licence's count for the day, which is what the invoice reads.
+ * /mcp and on the JSON API, from the licensee's own servers and agents (the
+ * browser preflight does not allow these headers, by design). A valid key
+ * answers without the free allowance and without x402; every answered call to
+ * a data tool or data endpoint is counted for that licence and day before the
+ * answer is released, which is what the invoice reads.
  *
- * Only tokens that look like DAP keys (dapk_ and 43 base64url characters) are
- * treated as licence attempts. Any other Authorization header is ignored, so a
- * client that sends an unrelated token keeps the free and pay per call rails
- * exactly as before. A DAP key that is unknown or revoked is refused with 401
- * rather than quietly answered under another rail: a licensee whose key stops
- * working must find out at once, not be charged in USDC or cut to 50 a day.
+ * Any header that mentions dapk_ is treated as a licence attempt. Any other
+ * Authorization header is ignored, so a client that sends an unrelated token
+ * keeps the free and pay per call rails exactly as before. A DAP key that is
+ * unknown, revoked or sent in the wrong shape is refused with 401 rather than
+ * quietly answered under another rail: a licensee whose key stops working
+ * must find out at once, not be charged in USDC or cut to 50 a day.
  *
  * The key itself is never stored. The licence row holds a SHA-256 of it; keys
  * are 256 random bits, so an unkeyed hash is enough to make a leaked table
@@ -30,18 +32,34 @@ export const KEY_PATTERN = /^dapk_[A-Za-z0-9_-]{43}$/;
 export const LICENCE_ID_PATTERN = /^lic_[0-9a-f]{8}$/;
 
 /**
- * The DAP key a request carries, if any. Authorization: Bearer first, then
- * X-API-Key, which is what some agent platforms let an administrator set.
+ * The DAP key a request carries.
  *
- * @returns {string|null}
+ * A DAP key is accepted in exactly two shapes: `Authorization: Bearer <key>`
+ * or `X-API-Key: <key>`. Any header that mentions dapk_ in another shape, or
+ * two headers carrying different keys, is malformed and refused: a key sent
+ * slightly wrong must fail loudly, never slip through to the free or paid
+ * rails. A header that does not mention dapk_ at all is not ours, and is
+ * ignored.
+ *
+ * @returns {{ status: 'none' } | { status: 'malformed' } | { status: 'key', key: string }}
  */
 export function presentedKey(request) {
-  const auth = (request.headers.get('Authorization') || '').trim();
-  const bearer = /^Bearer\s+(\S+)$/i.exec(auth);
-  if (bearer && bearer[1].startsWith('dapk_')) return bearer[1];
-  const header = (request.headers.get('X-API-Key') || '').trim();
-  if (header.startsWith('dapk_')) return header;
-  return null;
+  const auth = request.headers.get('Authorization');
+  const apiKey = request.headers.get('X-API-Key');
+  const keys = [];
+  if (auth !== null && auth.includes('dapk_')) {
+    const bearer = /^\s*Bearer[ \t]+(dapk_[^\s,]+)\s*$/i.exec(auth);
+    if (!bearer) return { status: 'malformed' };
+    keys.push(bearer[1]);
+  }
+  if (apiKey !== null && apiKey.includes('dapk_')) {
+    const value = apiKey.trim();
+    if (!/^dapk_[^\s,]+$/.test(value)) return { status: 'malformed' };
+    keys.push(value);
+  }
+  if (keys.length === 0) return { status: 'none' };
+  if (keys.length === 2 && keys[0] !== keys[1]) return { status: 'malformed' };
+  return { status: 'key', key: keys[0] };
 }
 
 /**
@@ -55,14 +73,14 @@ export function presentedKey(request) {
  * >}
  */
 export async function readLicence(request, env) {
-  const key = presentedKey(request);
-  if (key === null) return { status: 'none' };
-  if (!KEY_PATTERN.test(key)) return { status: 'invalid' };
+  const presented = presentedKey(request);
+  if (presented.status === 'none') return { status: 'none' };
+  if (presented.status === 'malformed' || !KEY_PATTERN.test(presented.key)) return { status: 'invalid' };
   try {
     const row = await env.DB.prepare(
       'SELECT id, licensee FROM licences WHERE key_hash = ? AND revoked_at IS NULL'
     )
-      .bind(await sha256(key))
+      .bind(await sha256(presented.key))
       .first();
     if (!row) return { status: 'invalid' };
     return { status: 'valid', licence: { id: row.id, licensee: row.licensee } };
@@ -84,16 +102,18 @@ export async function recordLicenceUsage(db, day, licenceId, endpoint) {
 }
 
 /**
- * Usage is what the invoice reads. It is written through waitUntil, which the
- * runtime runs to completion after the answer goes out, so it never delays or
- * breaks the answer. A failed write is logged.
+ * Counts one answered call for the invoice, before the answer is released.
+ * Returns false if the count could not be written, in which case the caller
+ * withholds the answer: a licensed answer is never given without being counted.
  */
-export function noteLicenceUsage(env, ctx, day, licenceId, endpoint) {
-  const job = recordLicenceUsage(env.DB, day, licenceId, endpoint).catch((err) => {
+export async function countLicensedCall(db, day, licenceId, endpoint) {
+  try {
+    await recordLicenceUsage(db, day, licenceId, endpoint);
+    return true;
+  } catch (err) {
     console.error(`Bellwether licence usage count failed: ${err && err.message ? err.message : String(err)}`);
-  });
-  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
-  return job;
+    return false;
+  }
 }
 
 const CONTACT = 'bsibeth@dap.solutions';
@@ -109,6 +129,7 @@ export function licenceRefused({ jsonRpc = false } = {}) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
       'WWW-Authenticate': 'Bearer realm="DAP Bellwether", error="invalid_token"',
     },
   });
@@ -122,6 +143,6 @@ export function licenceUnavailable({ jsonRpc = false } = {}) {
     : { error: 'licence_check_unavailable', message };
   return new Response(JSON.stringify(body), {
     status: 503,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Retry-After': '2' },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', 'Retry-After': '2' },
   });
 }

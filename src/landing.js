@@ -108,7 +108,7 @@ export const PRIVACY = {
     ],
     [
       'Licences',
-      'An institution that takes a licence has one record: its name as written on the licence, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.',
+      'An institution that takes a licence has one record: its name as written on the licence, an internal note about the agreement, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.',
     ],
     [
       'Accounts',

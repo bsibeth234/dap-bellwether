@@ -27,7 +27,7 @@
 import { handleMcpRequest, isAllowedOrigin } from './mcp.js';
 import { METERED_TOOLS, NETWORK_ALLOWANCE_MULTIPLE, pricingFor } from './pricing.js';
 import { TOOLS } from './tools.js';
-import { licenceRefused, licenceUnavailable, noteLicenceUsage, readLicence } from './licences.js';
+import { countLicensedCall, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
 
 /** Largest request body read. MCP messages here are a few hundred bytes. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -341,7 +341,7 @@ export async function handleMcp(request, env, ctx, overrides) {
   const forward = () => handleMcpRequest(withBody(request, JSON.stringify(message)), env);
   const day = utcDay(now());
 
-  if (licensed) return licensedCall(request, message, env, ctx, day, licence.licence);
+  if (licensed) return licensedCall(request, message, env, ctx, day, licence.licence, on);
 
   if (Array.isArray(message)) {
     const calls = message.map(classify);
@@ -437,19 +437,21 @@ export async function handleMcp(request, env, ctx, overrides) {
 /**
  * A call under a DAP licence. No allowance and no x402: an answered call to a
  * data tool adds one to the licence's count for the day, which the invoice
- * reads. A payment attached by mistake is removed unread, so nothing is
- * charged twice and the tool never sees it. Batches follow the paid tier's
- * rule, one data call per request, so every count matches one answer.
+ * reads, before the answer is released. A payment attached by mistake is
+ * removed unread, so nothing is charged twice and the tool never sees it.
+ * While the paid tier is on, batches follow its rule, one data call per
+ * request, so every count matches one answer; with it off, a batch is
+ * answered free like anyone else's.
  */
-async function licensedCall(request, message, env, ctx, day, licence) {
+async function licensedCall(request, message, env, ctx, day, licence, on) {
   const send = (msg) => handleMcpRequest(withBody(request, JSON.stringify(msg)), env);
 
   if (Array.isArray(message)) {
     const calls = message.map(classify);
-    if (calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
+    if (on && calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
       return rpcError(null, -32600, `Send each call to ${METERED_TOOLS.join(', ')} as its own request, not in a batch.`, 400);
     }
-    for (const c of calls) if (c.kind === 'free') noteUsage(env, ctx, day, c.tool, 'unmetered');
+    for (const c of calls) if (c.kind === 'free' || c.kind === 'metered') noteUsage(env, ctx, day, c.tool, 'unmetered');
     return send(message);
   }
 
@@ -467,10 +469,11 @@ async function licensedCall(request, message, env, ctx, day, licence) {
   const response = await send(clean);
   if (await failed(response)) {
     noteUsage(env, ctx, day, call.tool, 'not_charged');
-  } else {
-    noteLicenceUsage(env, ctx, day, licence.id, call.tool);
-    noteUsage(env, ctx, day, call.tool, 'licensed');
+    return response;
   }
+  // Every licensed answer is counted before it is released, or not released.
+  if (!(await countLicensedCall(env.DB, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
+  noteUsage(env, ctx, day, call.tool, 'licensed');
   return response;
 }
 

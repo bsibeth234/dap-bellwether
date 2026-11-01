@@ -16,6 +16,31 @@ import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun 
 export const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
 export const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
 
+const DATE_INPUT = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
+/**
+ * A since or until bound as the store writes times (toISOString, UTC with
+ * milliseconds), so the text comparison in searchChanges is a time
+ * comparison. A date alone covers the whole UTC day: since starts at its
+ * first millisecond, until ends at its last. A time without a zone is read
+ * as UTC. Returns null for anything that is not a real date.
+ *
+ * @param {unknown} value
+ * @param {'since'|'until'} edge
+ * @returns {string|null}
+ */
+export function dateBound(value, edge) {
+  if (typeof value !== 'string') return null;
+  const m = DATE_INPUT.exec(value);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return null;
+  if (!m[4]) return edge === 'until' ? `${m[1]}-${m[2]}-${m[3]}T23:59:59.999Z` : `${m[1]}-${m[2]}-${m[3]}T00:00:00.000Z`;
+  const ms = Date.parse(m[7] ? value : `${value}Z`);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
 export const TOOLS = [
   {
     name: 'search_regulatory_changes',
@@ -162,13 +187,21 @@ export async function callTool(name, args, env) {
 
   switch (name) {
     case 'search_regulatory_changes': {
+      const bounds = {};
+      for (const edge of ['since', 'until']) {
+        if (input[edge] === undefined || input[edge] === null || input[edge] === '') continue;
+        bounds[edge] = dateBound(input[edge], edge);
+        if (bounds[edge] === null) {
+          return errorResult(`${edge} must be an ISO 8601 date or timestamp, for example 2026-10-01.`);
+        }
+      }
       const rows = await searchChanges(db, {
         query: input.query,
         jurisdiction: input.jurisdiction,
         regulator: input.regulator,
         category: input.category,
-        since: input.since,
-        until: input.until,
+        since: bounds.since,
+        until: bounds.until,
         limit: input.limit || 20,
       });
       if (!rows.length) {

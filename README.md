@@ -58,14 +58,14 @@ The same records as JSON over HTTPS GET, for agents and systems that do not spea
 | --- | --- |
 | `GET /api/search?query=&jurisdiction=&regulator=&category=&since=&until=&limit=` | $0.01 from the first call |
 | `GET /api/recent?jurisdiction=&days=&limit=` | $0.01 from the first call |
-| `GET /api/changes/{id}` | $0.01 from the first call |
+| `GET /api/change?id=` | $0.01 from the first call |
 | `GET /api/coverage` | Free |
 
-There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. A date the regulator did not publish is `null`, never our collection time.
+There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. `since` and `until` are compared as UTC times: a date alone covers the whole day, and a time without a zone is UTC. A date the regulator did not publish is `null`, never our collection time. The record id is a query parameter so it never reaches the payment facilitator, which sees the path only.
 
 ### Institutional licences
 
-Institutions can take a licence instead of paying per call: one agreement, one invoice, and a key for their agents, with no crypto wallet. The key (`dapk_` and 43 characters) is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on `/mcp` and `/api`. A licensed call skips the allowance and x402, and each answered call to a data tool or data endpoint adds one to the licence's daily count, which is what the invoice reads. An unknown or revoked key answers 401 rather than falling back to the free or paid rails, so a licensee finds out at once. Any other `Authorization` header is ignored.
+Institutions can take a licence instead of paying per call: one agreement, one invoice, and a key for their agents, with no crypto wallet. The key (`dapk_` and 43 characters) is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on `/mcp` and `/api`. A licensed call skips the allowance and x402, and each answered call to a data tool or data endpoint adds one to the licence's daily count, which is what the invoice reads. An unknown or revoked key answers 401 rather than falling back to the free or paid rails, so a licensee finds out at once. A key in any other shape, or two different keys, is refused the same way. Any other `Authorization` header is ignored. Every licensed answer is counted before it is released; if the count cannot be written, the answer is withheld with 503. Keys are for the licensee's own servers and agents: the browser preflight does not allow these headers.
 
 ## Coverage
 
@@ -115,7 +115,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 129 tests, no network required (Node 22.5 or later)
+npm test                     # 141 tests, no network required (Node 22.5 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -214,7 +214,7 @@ This section is kept word for word in step with the privacy section rendered on 
 - **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here. A licensed call carries the institution's key, which is checked against a stored hash and not stored itself.
 - **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
 - **Payment claims.** For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service's key it cannot be matched to the transfer.
-- **Licences.** An institution that takes a licence has one record: its name as written on the licence, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.
+- **Licences.** An institution that takes a licence has one record: its name as written on the licence, an internal note about the agreement, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.
 - **Accounts.** There are none for people. The service has no sign in, so it holds no passwords or email addresses. A licence is not an account: it holds only what the Licences row describes.
 - **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
 - **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.

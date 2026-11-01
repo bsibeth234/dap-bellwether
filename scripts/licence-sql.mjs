@@ -55,13 +55,16 @@ export function listSql() {
   return 'SELECT id, licensee, created_at, revoked_at, note FROM licences ORDER BY created_at;';
 }
 
-/** Calls per licence and endpoint for one calendar month (UTC days). */
+/** The licensee name scripts/licence.mjs check uses. Its calls are never billed. */
+export const SELF_TEST_LICENSEE = 'DAP licence self test';
+
+/** Calls per licence and endpoint for one calendar month (UTC days). Self test licences are left out. */
 export function usageSql({ month }) {
   if (!MONTH.test(month)) throw new Error('A month looks like 2026-11.');
   return (
     'SELECT l.id AS licence_id, l.licensee AS licensee, u.endpoint AS endpoint, SUM(u.calls) AS calls ' +
     'FROM licence_usage_daily u JOIN licences l ON l.id = u.licence_id ' +
-    `WHERE u.day LIKE ${quote(`${month}-%`)} ` +
+    `WHERE u.day LIKE ${quote(`${month}-%`)} AND l.licensee <> ${quote(SELF_TEST_LICENSEE)} ` +
     'GROUP BY l.id, l.licensee, u.endpoint ORDER BY l.licensee, u.endpoint;'
   );
 }
