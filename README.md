@@ -42,6 +42,14 @@ The Worker also answers on `https://dap-bellwether.dap-solutions.workers.dev/mcp
 
 All four are read-only. There is no write surface.
 
+### Price
+
+Free for everyday use. While the paid tier is on, each caller gets 50 calls a day to the three data tools, counted per network address (IPv6 per /64) and reset at 00:00 UTC. `list_coverage`, `initialize` and `tools/list` are always free.
+
+Past that, each call costs $0.02 in USDC on Base, paid per call with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and a plain sentence saying when the allowance resets. A call that fails is never charged, and an answer is released only after its payment settles.
+
+The paid tier is off until it is switched on (see Deploying). While it is off, every call is free and nothing is counted per caller. The landing page, `/health` and the MCP `instructions` all say which state is live.
+
 ## Coverage
 
 Canada: OSFI, OSC.
@@ -81,6 +89,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 ### Notes on choices
 
 - **No auth.** The entire surface is public regulatory material. There is nothing here to protect and nothing a user can damage, and skipping OAuth removes the largest source of directory review friction.
+- **Metering by address, not by account.** An account would mean a sign in, which MCP hosts handle differently and many agents cannot do at all. A daily count per network address keeps the connector keyless, and x402 lets an agent pay per call without signing up for anything.
 - **D1 rather than Postgres.** The store lives inside the same Worker with no external credentials and no egress. For a free public read-only surface, fewer moving parts wins.
 - **The MCP layer is written directly against JSON-RPC.** The reference SDK's HTTP transport expects a Node request and response pair, and the Workers path around it wants Durable Objects for session state. A read-only server has no session state worth keeping, so the stateless JSON mode the specification already permits is simpler and has less to break.
 - **Keyword search is `LIKE`, not FTS5.** At the volumes these feeds produce, `LIKE` with the jurisdiction and date indexes is comfortably fast, and it avoids keeping an FTS index in sync through revisions. Worth revisiting if the corpus grows an order of magnitude.
@@ -89,7 +98,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 50 tests, no network required
+npm test                     # 90 tests, no network required (Node 22.7 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -115,6 +124,29 @@ curl "http://localhost:8790/__scheduled?cron=0+*/6+*+*+*"
 
 Use `--remote` rather than plain `wrangler dev`. Local `workerd` cannot reach every regulator: OSFI and CFTC both fail there with a header-independent connection error while succeeding from Cloudflare's network, so a local run will under-report coverage and tell you a source is broken when it is not.
 
+### The paid tier
+
+The payment code in `src/x402/` is the DAP Agent Payments library, vendored unchanged from the Foundry payment edge (`src/x402/VENDORED.md` records the source and the hash of every file). Bellwether wraps it in `src/payments.js` with the daily allowance, and `src/pricing.js` decides from the settings whether the tier is on.
+
+It is off until `X402_PAY_TO` is set. Switching it on is settings, not code:
+
+```bash
+npm run db:migrate                                     # adds allowance_counts and tool_usage_daily
+openssl rand -hex 32 | npx wrangler secret put ALLOWANCE_KEY
+npx wrangler secret put CDP_API_KEY_ID                 # a Coinbase Developer Platform API key
+npx wrangler secret put CDP_API_KEY_SECRET
+npx wrangler secret put X402_PAY_TO                    # the wallet that receives USDC; this one switches it on
+curl -s https://bellwether.dap.solutions/health        # payments.status should read "on"
+```
+
+`X402_NETWORKS` (Base mainnet, `eip155:8453`) and `FREE_CALLS_PER_DAY` (50) are plain settings in `wrangler.toml`. A setting that is present but wrong leaves the tier off and `/health` names the problem, so a bad setting costs revenue and never costs a light user an answer. Deleting `X402_PAY_TO` switches it off again.
+
+Usage, with no caller attached:
+
+```bash
+npx wrangler d1 execute bellwether --remote --command "SELECT * FROM tool_usage_daily ORDER BY day DESC, calls DESC"
+```
+
 ### Verifying it works
 
 ```bash
@@ -135,17 +167,18 @@ Add an entry to `SOURCES` in `src/sources.js`, run `npm run verify:sources`, and
 
 ## Privacy policy
 
-The connector collects no personal data. This page counts visits without cookies or identifiers.
+The connector keeps no accounts, no email addresses and no network addresses. This page counts visits without cookies or identifiers.
 
-This section is kept word for word in step with the privacy section rendered on the landing page, in `src/landing.js`. Change one and change the other.
+This section is kept word for word in step with the privacy section rendered on the landing page, from `PRIVACY` in `src/landing.js`. A test fails if they differ. Change one and change the other.
 
-- **What is stored.** Only regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. No user data of any kind is written to the database.
-- **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity.
-- **Accounts.** There are none. The service has no authentication, so it holds no credentials, email addresses or identifiers.
-- **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon, so tool calls carry no analytics of any kind.
-- **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above.
-- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Request parameters are not retained.
-- **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms.
+- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts described below. Nothing else a user sends is written to the database.
+- **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.
+- **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed one-way hash of its network address, bound to the day: never the address itself, and never with the query. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
+- **Accounts.** There are none. The service has no sign in, so it holds no credentials or email addresses.
+- **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
+- **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
+- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends. Request parameters are not retained.
+- **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.
 - **Contact.** bsibeth@dap.solutions
 
 ## Licence

@@ -15,6 +15,7 @@
 
 import { TOOLS, callTool } from './tools.js';
 import { renderConnectorNotice } from './landing.js';
+import { pricingFor, pricingInstructions } from './pricing.js';
 
 const SERVER_INFO = { name: 'DAP Bellwether', version: '1.0.0' };
 
@@ -27,6 +28,13 @@ const INSTRUCTIONS = [
   'Use list_coverage before concluding that something was not published, so an absence of results is not mistaken for an absence of regulation.',
   'This is a public information service. It is not legal or compliance advice.',
 ].join(' ');
+
+/** The instructions, plus the price while the paid tier is on, so an agent
+ *  learns the allowance before it meets it rather than from a refusal. */
+function instructionsFor(env) {
+  const pricing = pricingInstructions(pricingFor(env));
+  return pricing ? `${INSTRUCTIONS} ${pricing}` : INSTRUCTIONS;
+}
 
 /**
  * Origin validation, required by the spec to prevent DNS rebinding.
@@ -112,7 +120,7 @@ async function handleMessage(message, env) {
         protocolVersion: negotiateProtocolVersion(params && params.protocolVersion),
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
-        instructions: INSTRUCTIONS,
+        instructions: instructionsFor(env),
       });
     }
 

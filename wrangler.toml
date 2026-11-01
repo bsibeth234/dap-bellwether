@@ -33,3 +33,11 @@ database_id = "cb812950-20d4-45a1-b7c7-531ed0234e7b"
 
 [observability]
 enabled = true
+
+# The paid tier (src/pricing.js). Off until the secret X402_PAY_TO is set, so
+# these two change nothing on their own. The secrets that switch it on are
+# X402_PAY_TO, CDP_API_KEY_ID, CDP_API_KEY_SECRET and ALLOWANCE_KEY, set with
+# wrangler secret put and never written here. README, "The paid tier".
+[vars]
+X402_NETWORKS = "eip155:8453"
+FREE_CALLS_PER_DAY = "50"

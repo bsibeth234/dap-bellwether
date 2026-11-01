@@ -61,3 +61,26 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_started ON ingest_runs (started_at DESC);
+
+-- The free daily allowance. One row per caller per UTC day, while the paid
+-- tier is on. caller is a keyed one-way hash of the network address, bound to
+-- the day, so it cannot be reversed without the key and no two days link. The
+-- address itself and the query are never written. Rows from a day that has
+-- ended are deleted by the next scheduled run.
+CREATE TABLE IF NOT EXISTS allowance_counts (
+  day    TEXT NOT NULL,                  -- YYYY-MM-DD, UTC
+  caller TEXT NOT NULL,                  -- keyed hash, see src/payments.js
+  calls  INTEGER NOT NULL,
+  PRIMARY KEY (day, caller)
+) WITHOUT ROWID;
+
+-- What the tools are actually used for: a daily total per tool and outcome,
+-- with no caller attached. outcome is unmetered, allowance, challenged, paid
+-- or not_charged.
+CREATE TABLE IF NOT EXISTS tool_usage_daily (
+  day     TEXT NOT NULL,                 -- YYYY-MM-DD, UTC
+  tool    TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  calls   INTEGER NOT NULL,
+  PRIMARY KEY (day, tool, outcome)
+) WITHOUT ROWID;

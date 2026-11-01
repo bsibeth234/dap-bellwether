@@ -80,7 +80,7 @@ test('the privacy section names Cloudflare Web Analytics', async () => {
   assert.match(body, /<dt>Analytics<\/dt>/, 'analytics deserves its own row, not a footnote');
   assert.match(
     body,
-    /The connector collects no personal data\. This page counts visits without cookies or identifiers\./
+    /The connector keeps no accounts, no email addresses and no network addresses\. This page counts visits without cookies or identifiers\./
   );
 });
 

@@ -41,6 +41,55 @@ export const SETUP_STEPS = [
   'In a chat, click the plus button, hover Connectors, and toggle it on.',
 ];
 
+/**
+ * The privacy statement, as data, because two documents carry it: this page
+ * and the README. A test holds them word for word in step. The statement is
+ * the same whether or not the paid tier is on, and says which rows depend on
+ * it, so it can never claim less than the service does.
+ */
+export const PRIVACY = {
+  intro:
+    'The connector keeps no accounts, no email addresses and no network addresses. This page counts visits without cookies or identifiers.',
+  rows: [
+    [
+      'What is stored',
+      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts described below. Nothing else a user sends is written to the database.',
+    ],
+    [
+      'What is received',
+      "Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.",
+    ],
+    [
+      'Allowance counts',
+      'While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed one-way hash of its network address, bound to the day: never the address itself, and never with the query. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.',
+    ],
+    [
+      'Accounts',
+      'There are none. The service has no sign in, so it holds no credentials or email addresses.',
+    ],
+    [
+      'Analytics',
+      'This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.',
+    ],
+    [
+      'Third party sharing',
+      "Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.",
+    ],
+    [
+      'Retention',
+      'Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends. Request parameters are not retained.',
+    ],
+    [
+      'Infrastructure',
+      "Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.",
+    ],
+    ['Contact', 'bsibeth@dap.solutions'],
+  ],
+};
+
+/** The DAP Agent Payments page, named wherever the price is. */
+const AGENT_PAYMENTS_URL = 'https://dap.solutions/solutions/systems/agent-payments/';
+
 /** Escape anything interpolated into markup. Registry text is ours, but a
  *  page that trusts its inputs teaches the next person to do the same. */
 function esc(value) {
@@ -86,6 +135,31 @@ function coverageMarkup() {
     : '';
 
   return `<div class="jurs">${blocks}</div>${notMonitored}`;
+}
+
+/**
+ * The price, from the live settings. While the paid tier is off the page says
+ * every call is free, because it is: a price the connector does not charge is
+ * a claim it cannot support.
+ *
+ * @param {{ status: string, freeCallsPerDay?: number, price?: string, networkLabel?: string }} pricing
+ */
+function priceMarkup(pricing) {
+  if (!pricing || pricing.status !== 'on') {
+    return '<p>Free. Every tool, every call. The paid tier is off.</p>';
+  }
+  return `<p>Free for everyday use. Each caller gets ${esc(pricing.freeCallsPerDay)} calls a day to the three data tools, counted per network address and reset at 00:00 UTC. list_coverage is always free.</p>
+<p>Past that, each call costs ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, paid per call with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. An agent that cannot pay gets a payment required result until the allowance resets. A call that fails is never charged.</p>`;
+}
+
+function privacyMarkup() {
+  const rows = PRIVACY.rows
+    .map(([term, text]) => {
+      const body = term === 'Contact' ? `<a href="mailto:${esc(text)}">${esc(text)}</a>` : esc(text);
+      return `  <dt>${esc(term)}</dt>\n  <dd>${body}</dd>`;
+    })
+    .join('\n');
+  return `<p>${esc(PRIVACY.intro)}</p>\n<dl>\n${rows}\n</dl>`;
 }
 
 /**
@@ -218,7 +292,11 @@ ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
  * @param {string} origin the request origin, so the page advertises the host
  *   it was actually reached on rather than a hardcoded one
  */
-export function renderLanding(origin) {
+/**
+ * @param {string} origin the request origin
+ * @param {object} [pricing] pricingSummary() of the live settings; off when absent
+ */
+export function renderLanding(origin, pricing = { status: 'off' }) {
   const mcpUrl = `${origin}/mcp`;
   const feedCount = enabledSources().length;
   const jurisdictionCount = new Set(enabledSources().map((s) => s.jurisdiction)).size;
@@ -381,6 +459,9 @@ ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
 </table>
 <p>All four are read-only. There is no write surface.</p>
 
+<h2>Price</h2>
+${priceMarkup(pricing)}
+
 <h2>Coverage</h2>
 <p>${feedCount} feeds across ${jurisdictionCount} jurisdictions. This list is generated from the live source registry, so it is what the connector actually collects rather than what it once intended to.</p>
 ${coverageMarkup()}
@@ -398,25 +479,7 @@ ${coverageMarkup()}
 <p><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></p>
 
 <h2>Privacy</h2>
-<p>The connector collects no personal data. This page counts visits without cookies or identifiers.</p>
-<dl>
-  <dt>What is stored</dt>
-  <dd>Only regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. No user data of any kind is written to the database.</dd>
-  <dt>What is received</dt>
-  <dd>Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity.</dd>
-  <dt>Accounts</dt>
-  <dd>There are none. The service has no authentication, so it holds no credentials, email addresses or identifiers.</dd>
-  <dt>Analytics</dt>
-  <dd>This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon, so tool calls carry no analytics of any kind.</dd>
-  <dt>Third party sharing</dt>
-  <dd>Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above.</dd>
-  <dt>Retention</dt>
-  <dd>Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Request parameters are not retained.</dd>
-  <dt>Infrastructure</dt>
-  <dd>Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms.</dd>
-  <dt>Contact</dt>
-  <dd><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></dd>
-</dl>
+${privacyMarkup()}
 
 <footer>
   <p class="disclaimer">This is a public information service. It is not legal or compliance advice.</p>

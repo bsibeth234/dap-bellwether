@@ -23,6 +23,7 @@ what it does.
 | Signing key | `~/.config/mcp-publisher/dap-solutions-key.pem`, mode 600, outside the repo, not recoverable, also held in a password manager |
 | Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
 | Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
+| Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per caller per UTC day to the three data tools, then $0.02 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on or misconfigured. README, "The paid tier", has the switch-on steps. |
 
 ## The corrected endpoints
 
@@ -98,6 +99,24 @@ Two failures were ours rather than the regulators':
   comes from the source registry, so correcting or disabling a regulator
   updates the public page automatically. Never hardcode that list: the page
   would then claim coverage the connector does not have.
+
+- **`src/x402/` is vendored, not ours to edit here.** It is the DAP Agent
+  Payments library copied byte for byte from `dap-foundry/edge/x402/src/lib`.
+  `test/payments.test.mjs` fails if a file drifts from the hashes in
+  `src/x402/VENDORED.md`. Change it in dap-foundry, where its own tests run,
+  then copy it across and update the hashes.
+- **Tests run with `--experimental-transform-types`** (Node 22.7 or later),
+  because the vendored library is TypeScript with parameter properties, which
+  plain type stripping refuses. Wrangler bundles it with esbuild, so the
+  deployed Worker needs nothing extra.
+- **A bad payment setting fails open.** The paid tier stays off and `/health`
+  names the setting. This is a public information service: a mistake should
+  cost revenue, never a light user's answer. A facilitator outage during a
+  paid call is different: that call gets a 503 and no free answer.
+- **Claude's tool calls come from Anthropic's published outbound range,
+  160.79.104.0/21.** Measured 2026-10-25 to 2026-11-01: 681 `Claude-User`
+  requests from 59 addresses, at most 40 per address in the week, so a per
+  address allowance does not pool Claude users into one count.
 
 ## Conventions
 
