@@ -15,10 +15,28 @@
 
 import { SOURCES, JURISDICTIONS, enabledSources } from './sources.js';
 
-/** One sentence, shared by the meta description and both card previews, so a
- *  link preview and a search result never describe the service differently. */
-const DESCRIPTION =
-  'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
+/** What the service is, in one line, for the title and both card previews.
+ *  Positioning set by Brendan Sibeth, 1 November 2026: free for people,
+ *  agents pay per call. Said only while the paid tier is on, because the page
+ *  says only what the connector does. */
+const TAGLINE = 'Free for people. Agents pay per call.';
+
+/** The meta description, shared by both card previews, so a link preview and
+ *  a search result never describe the service differently. */
+function describe(pricing) {
+  return pricing && pricing.status === 'on'
+    ? `Regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. ${TAGLINE}`
+    : 'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
+}
+
+function titleFor(pricing) {
+  return pricing && pricing.status === 'on'
+    ? 'DAP Bellwether, a regulatory change feed'
+    : 'DAP Bellwether, a free regulatory change feed';
+}
+
+/** Describes the social card image, which is a file and the same in every state. */
+const CARD_ALT = `DAP Bellwether. ${TAGLINE} bellwether.dap.solutions`;
 
 /**
  * The one address this service should be indexed under.
@@ -40,6 +58,59 @@ export const SETUP_STEPS = [
   'Give it a name, paste the URL above, and click Add.',
   'In a chat, click the plus button, hover Connectors, and toggle it on.',
 ];
+
+/**
+ * The privacy statement, as data, because two documents carry it: this page
+ * and the README. A test holds them word for word in step. The statement is
+ * the same whether or not the paid tier is on, and says which rows depend on
+ * it, so it can never claim less than the service does.
+ */
+export const PRIVACY = {
+  intro:
+    'The connector keeps no accounts and no email addresses. This page counts visits without cookies or identifiers.',
+  rows: [
+    [
+      'What is stored',
+      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.',
+    ],
+    [
+      'What is received',
+      "Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.",
+    ],
+    [
+      'Allowance counts',
+      'While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.',
+    ],
+    [
+      'Payment claims',
+      'For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service\'s key it cannot be matched to the transfer.',
+    ],
+    [
+      'Accounts',
+      'There are none. The service has no sign in, so it holds no credentials or email addresses.',
+    ],
+    [
+      'Analytics',
+      'This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.',
+    ],
+    [
+      'Third party sharing',
+      "Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.",
+    ],
+    [
+      'Retention',
+      "Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.",
+    ],
+    [
+      'Infrastructure',
+      "Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. The Worker keeps no request logs: it logs errors and the collection summary, never a caller's address or query. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.",
+    ],
+    ['Contact', 'bsibeth@dap.solutions'],
+  ],
+};
+
+/** The DAP Agent Payments page, named wherever the price is. */
+const AGENT_PAYMENTS_URL = 'https://dap.solutions/solutions/systems/agent-payments/';
 
 /** Escape anything interpolated into markup. Registry text is ours, but a
  *  page that trusts its inputs teaches the next person to do the same. */
@@ -86,6 +157,31 @@ function coverageMarkup() {
     : '';
 
   return `<div class="jurs">${blocks}</div>${notMonitored}`;
+}
+
+/**
+ * The price, from the live settings. While the paid tier is off the page says
+ * every call is free, because it is: a price the connector does not charge is
+ * a claim it cannot support.
+ *
+ * @param {{ status: string, freeCallsPerDay?: number, price?: string, networkLabel?: string }} pricing
+ */
+function priceMarkup(pricing) {
+  if (!pricing || pricing.status !== 'on') {
+    return '<p>Free. Every tool, every call. The paid tier is off.</p>';
+  }
+  return `<p>Free for people: ${esc(pricing.freeCallsPerDay)} calls a day from any one address to the three data tools, reset at 00:00 UTC. list_coverage is always free.</p>
+<p>Agents pay per call past that: ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. A call that fails is never charged and does not count.</p>`;
+}
+
+function privacyMarkup() {
+  const rows = PRIVACY.rows
+    .map(([term, text]) => {
+      const body = term === 'Contact' ? `<a href="mailto:${esc(text)}">${esc(text)}</a>` : esc(text);
+      return `  <dt>${esc(term)}</dt>\n  <dd>${body}</dd>`;
+    })
+    .join('\n');
+  return `<p>${esc(PRIVACY.intro)}</p>\n<dl>\n${rows}\n</dl>`;
 }
 
 /**
@@ -218,36 +314,46 @@ ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
  * @param {string} origin the request origin, so the page advertises the host
  *   it was actually reached on rather than a hardcoded one
  */
-export function renderLanding(origin) {
+/**
+ * @param {string} origin the request origin
+ * @param {object} [pricing] pricingSummary() of the live settings; off when absent
+ */
+export function renderLanding(origin, pricing = { status: 'off' }) {
   const mcpUrl = `${origin}/mcp`;
   const feedCount = enabledSources().length;
   const jurisdictionCount = new Set(enabledSources().map((s) => s.jurisdiction)).size;
+  const title = esc(titleFor(pricing));
+  const description = esc(describe(pricing));
+  const lede =
+    pricing && pricing.status === 'on'
+      ? `A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. ${TAGLINE} No account, no key, no seat licence.`
+      : 'A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. No account, no key, no seat licence.';
 
   return `<!doctype html>
 <html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DAP Bellwether, a free regulatory change feed</title>
-<meta name="description" content="${esc(DESCRIPTION)}">
+<title>${title}</title>
+<meta name="description" content="${description}">
 <meta name="theme-color" content="#15171A">
 <link rel="canonical" href="${esc(CANONICAL_URL)}">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DAP Bellwether">
-<meta property="og:title" content="DAP Bellwether, a free regulatory change feed">
-<meta property="og:description" content="${esc(DESCRIPTION)}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
 <meta property="og:url" content="${esc(CANONICAL_URL)}">
 <meta property="og:image" content="${esc(origin)}/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="DAP Bellwether, a free regulatory change feed, at bellwether.dap.solutions">
+<meta property="og:image:alt" content="${esc(CARD_ALT)}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="DAP Bellwether, a free regulatory change feed">
-<meta name="twitter:description" content="${esc(DESCRIPTION)}">
+<meta name="twitter:title" content="${title}">
+<meta name="twitter:description" content="${description}">
 <meta name="twitter:image" content="${esc(origin)}/og.png">
-<meta name="twitter:image:alt" content="DAP Bellwether, a free regulatory change feed, at bellwether.dap.solutions">
+<meta name="twitter:image:alt" content="${esc(CARD_ALT)}">
 
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
@@ -352,7 +458,7 @@ footer p{max-width:36rem}
 <header>
   <p class="eyebrow">Dartmouth Advisory Partners</p>
   <h1>DAP Bellwether</h1>
-  <p class="lede">A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. No account, no key, no seat licence.</p>
+  <p class="lede">${esc(lede)}</p>
 </header>
 
 <h2>What it is</h2>
@@ -381,6 +487,9 @@ ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
 </table>
 <p>All four are read-only. There is no write surface.</p>
 
+<h2>Price</h2>
+${priceMarkup(pricing)}
+
 <h2>Coverage</h2>
 <p>${feedCount} feeds across ${jurisdictionCount} jurisdictions. This list is generated from the live source registry, so it is what the connector actually collects rather than what it once intended to.</p>
 ${coverageMarkup()}
@@ -398,25 +507,7 @@ ${coverageMarkup()}
 <p><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></p>
 
 <h2>Privacy</h2>
-<p>The connector collects no personal data. This page counts visits without cookies or identifiers.</p>
-<dl>
-  <dt>What is stored</dt>
-  <dd>Only regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. No user data of any kind is written to the database.</dd>
-  <dt>What is received</dt>
-  <dd>Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity.</dd>
-  <dt>Accounts</dt>
-  <dd>There are none. The service has no authentication, so it holds no credentials, email addresses or identifiers.</dd>
-  <dt>Analytics</dt>
-  <dd>This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon, so tool calls carry no analytics of any kind.</dd>
-  <dt>Third party sharing</dt>
-  <dd>Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above.</dd>
-  <dt>Retention</dt>
-  <dd>Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Request parameters are not retained.</dd>
-  <dt>Infrastructure</dt>
-  <dd>Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms.</dd>
-  <dt>Contact</dt>
-  <dd><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></dd>
-</dl>
+${privacyMarkup()}
 
 <footer>
   <p class="disclaimer">This is a public information service. It is not legal or compliance advice.</p>

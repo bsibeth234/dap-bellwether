@@ -90,7 +90,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="$
 <g transform="translate(0 ${PAD})">
   ${mark(MARGIN, 88, 132)}
   <text class="wordmark" x="${MARGIN}" y="342">DAP Bellwether</text>
-  <text class="desc" x="${MARGIN}" y="398">A free regulatory change feed, delivered as an MCP connector.</text>
+  <text class="desc" x="${MARGIN}" y="398">Free for people. Agents pay per call.</text>
   <line x1="${MARGIN}" y1="482" x2="${WIDTH - MARGIN}" y2="482" stroke="${RULE}" stroke-width="1"/>
   <text class="url" x="${MARGIN}" y="536">bellwether.dap.solutions</text>
 </g>

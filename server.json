@@ -2,14 +2,14 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "solutions.dap/bellwether",
   "title": "DAP Bellwether",
-  "description": "Free regulatory change feed for financial regulators in Canada, the US, the UK and the EU.",
+  "description": "Regulatory change feed for Canada, the US, the UK and the EU. Free for people, agents pay per call.",
   "websiteUrl": "https://bellwether.dap.solutions",
   "repository": {
     "url": "https://github.com/bsibeth234/dap-bellwether",
     "source": "github",
     "id": "1311659432"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "remotes": [
     {
       "type": "streamable-http",

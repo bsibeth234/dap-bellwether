@@ -6,10 +6,13 @@
  *   assets     icons, manifest and fonts, bundled because a Worker has no disk
  *   scheduled  run the ingest on a cron trigger
  *
- * Dartmouth Advisory Partners. Free to use, no account required.
+ * Dartmouth Advisory Partners. Free to use, no account required. While the
+ * paid tier is on, heavy use of the data tools pays per call (payments.js).
  */
 
-import { handleMcpRequest } from './mcp.js';
+import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.js';
+import { purgePaymentClaims } from './claims.js';
+import { pricingFor, pricingSummary } from './pricing.js';
 import { runIngest } from './ingest.js';
 import { countChanges, lastIngestRun, getSourceHealth } from './db.js';
 import { enabledSources } from './sources.js';
@@ -28,12 +31,26 @@ export function isFallbackHost(hostname) {
   return String(hostname).toLowerCase().endsWith('.workers.dev');
 }
 
+/**
+ * The pricing summary for /health. A tier switched on before its tables exist
+ * answers every metered call free, so it reports degraded and says why.
+ */
+async function paymentsHealth(env) {
+  const summary = pricingSummary(pricingFor(env));
+  if (summary.status !== 'on' || (await paymentStoreReady(env.DB))) return summary;
+  return {
+    ...summary,
+    status: 'degraded',
+    reason: 'The payment tables are missing, so metered calls are answered free. Run npm run db:migrate.',
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === '/mcp') {
-      return handleMcpRequest(request, env);
+      return handleMcp(request, env, ctx);
     }
 
     // Icons, manifest and fonts. Checked before the routes below so a static
@@ -60,6 +77,7 @@ export default {
             error: (health[s.id] || {}).last_error || null,
           })),
           lastRun: run || null,
+          payments: await paymentsHealth(env),
         });
       } catch (err) {
         return Response.json(
@@ -90,13 +108,21 @@ export default {
 
       // The origin is taken from the request so the page advertises whichever
       // hostname the visitor arrived on, custom domain or workers.dev.
-      return new Response(renderLanding(url.origin), { headers });
+      return new Response(renderLanding(url.origin, pricingSummary(pricingFor(env))), { headers });
     }
 
     return new Response('Not found', { status: 404 });
   },
 
   async scheduled(event, env, ctx) {
+    // Allowance counts from a day that has ended are deleted here. The cron's
+    // 00:00 UTC run is the first after each day ends, so a count lives about
+    // a day. Its own job, so a failed ingest never keeps a count alive.
+    ctx.waitUntil(
+      Promise.all([purgeAllowanceCounts(env.DB, Date.now()), purgePaymentClaims(env.DB, Date.now())]).catch((err) => {
+        console.error(`Bellwether allowance purge failed: ${err && err.message ? err.message : String(err)}`);
+      })
+    );
     ctx.waitUntil(
       runIngest(env.DB).then((summary) => {
         // Red flags first, then status. This lands in wrangler tail.
