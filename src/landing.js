@@ -49,11 +49,11 @@ export const SETUP_STEPS = [
  */
 export const PRIVACY = {
   intro:
-    'The connector keeps no accounts, no email addresses and no network addresses. This page counts visits without cookies or identifiers.',
+    'The connector keeps no accounts and no email addresses. This page counts visits without cookies or identifiers.',
   rows: [
     [
       'What is stored',
-      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts described below. Nothing else a user sends is written to the database.',
+      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.',
     ],
     [
       'What is received',
@@ -61,7 +61,11 @@ export const PRIVACY = {
     ],
     [
       'Allowance counts',
-      'While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed one-way hash of its network address, bound to the day: never the address itself, and never with the query. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.',
+      'While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.',
+    ],
+    [
+      'Payment claims',
+      'For each paid call, a one-way hash of its payment authorization is kept until the authorization expires, at most a day, so one payment cannot buy two answers. It holds no query, and the wallet and nonce inside it cannot be read back.',
     ],
     [
       'Accounts',
@@ -77,11 +81,11 @@ export const PRIVACY = {
     ],
     [
       'Retention',
-      'Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends. Request parameters are not retained.',
+      "Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.",
     ],
     [
       'Infrastructure',
-      "Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.",
+      "Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. The Worker keeps no request logs: it logs errors and the collection summary, never a caller's address or query. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.",
     ],
     ['Contact', 'bsibeth@dap.solutions'],
   ],
@@ -149,7 +153,7 @@ function priceMarkup(pricing) {
     return '<p>Free. Every tool, every call. The paid tier is off.</p>';
   }
   return `<p>Free for everyday use. Each caller gets ${esc(pricing.freeCallsPerDay)} calls a day to the three data tools, counted per network address and reset at 00:00 UTC. list_coverage is always free.</p>
-<p>Past that, each call costs ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, paid per call with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. An agent that cannot pay gets a payment required result until the allowance resets. A call that fails is never charged.</p>`;
+<p>Past that, each call costs ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, paid per call with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. An agent that cannot pay gets a payment required result until the allowance resets. A call that fails is never charged and never counted.</p>`;
 }
 
 function privacyMarkup() {

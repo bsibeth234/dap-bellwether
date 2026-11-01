@@ -11,6 +11,7 @@ import {
   handleMcp,
   callerAddress,
   callerHash,
+  callerScopes,
   classify,
   purgeAllowanceCounts,
   utcDay,
@@ -18,6 +19,7 @@ import {
 } from '../src/payments.js';
 import { pricingFor, METERED_TOOLS } from '../src/pricing.js';
 import { PRIVACY } from '../src/landing.js';
+import { purgePaymentClaims } from '../src/claims.js';
 import { runIngest } from '../src/ingest.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -76,7 +78,7 @@ function paidSettings(db, extra = {}) {
 }
 
 /** A facilitator that records what it was sent and answers as told. */
-function fakeFacilitator({ valid = true, settles = true } = {}) {
+function fakeFacilitator({ valid = true, settles = true, pending = false } = {}) {
   const seen = { verify: [], settle: [] };
   return {
     seen,
@@ -88,6 +90,14 @@ function fakeFacilitator({ valid = true, settles = true } = {}) {
     },
     async settle(payload, requirements) {
       seen.settle.push({ payload, requirements });
+      if (pending) {
+        return {
+          success: false,
+          errorReason: 'settlement_pending',
+          transaction: '0x' + 'ef'.repeat(32),
+          network: requirements.network,
+        };
+      }
       return settles
         ? {
             success: true,
@@ -287,9 +297,11 @@ test('every metered tool draws on one allowance, and list_coverage is never coun
   assert.deepEqual(await allowanceRows(db), [], 'list_coverage is not counted per caller');
 
   await send(env, toolCall('recent_regulatory_changes'));
-  await send(env, toolCall('get_regulatory_change', { id: 'none' }));
-  const { json } = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const found = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+  const id = /id: (\S+)/.exec(found.result.content[0].text)[1];
+  const { json } = await send(env, toolCall('get_regulatory_change', { id }));
   assert.equal(json.result.isError, true, 'the third metered call of any kind is past the allowance');
+  assert.equal(json.result.structuredContent.x402Version, 2);
   assert.deepEqual(METERED_TOOLS.slice().sort(), [
     'get_regulatory_change',
     'recent_regulatory_changes',
@@ -522,6 +534,139 @@ test('/health and the page state the price while the tier is on, and nothing sec
   assert.ok(!page.includes(PAY_TO));
 });
 
+test('a body no reader agrees on is a parse error, never an answer', async () => {
+  // Two byte order marks: one decoder strips the first and JSON.parse refuses
+  // the second, while a reader that strips one more would run the call.
+  const db = await seededDb();
+  const call = JSON.stringify(toolCall('search_regulatory_changes', { query: 'capital' }));
+  const raw = new Uint8Array([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf, ...new TextEncoder().encode(call)]);
+  for (const env of [paidSettings(db), { DB: db }]) {
+    const { response, json } = await send(env, null, { raw });
+    assert.equal(response.status, 400);
+    assert.equal(json.error.code, -32700);
+    assert.ok(!JSON.stringify(json).includes('capital adequacy'));
+  }
+});
+
+test('every /64 in one IPv6 /48 shares a ceiling of ten allowances', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const search = () => toolCall('search_regulatory_changes', { query: 'capital' });
+  const answered = [];
+  for (let block = 0; block < 21; block += 1) {
+    const { json } = await send(env, search(), { ip: `2001:db8:ab:${block.toString(16)}::1` });
+    answered.push(json.result.isError === undefined);
+  }
+  assert.deepEqual(answered.slice(0, 20), Array(20).fill(true), 'twenty /64s each get a first call free');
+  assert.equal(answered[20], false, 'the /48 ceiling is ten allowances of two');
+  const elsewhere = await send(env, search(), { ip: '2001:db8:ac:0::1' });
+  assert.equal(elsewhere.json.result.isError, undefined, 'another /48 is untouched');
+});
+
+test('callerScopes holds IPv4 to the address and IPv6 to its /64 and its /48', () => {
+  const at = (ip) => callerScopes(new Request('https://x.test/', { headers: { 'CF-Connecting-IP': ip } }), 50);
+  assert.deepEqual(at('203.0.113.9'), [{ address: '203.0.113.9', limit: 50 }]);
+  assert.deepEqual(at('2001:db8:1:2::9'), [
+    { address: '2001:0db8:0001:0002::/64', limit: 50 },
+    { address: '2001:0db8:0001::/48', limit: 500 },
+  ]);
+});
+
+test('a call that fails, or a notification, does not use up the allowance', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 3; i += 1) {
+    const { json } = await send(env, toolCall('get_regulatory_change', { id: 'missing' }));
+    assert.equal(json.result.isError, true);
+    assert.match(json.result.content[0].text, /No record with id missing/, 'answered, not priced');
+  }
+  const note = await send(env, { jsonrpc: '2.0', method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } });
+  assert.equal(note.response.status, 202);
+  for (let i = 0; i < 2; i += 1) {
+    const { json } = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+    assert.equal(json.result.isError, undefined, 'the allowance is still whole');
+  }
+  const { json } = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  assert.equal(json.result.isError, true);
+  assert.ok((await usage(db)).includes('get_regulatory_change not_charged 3'));
+});
+
+test('a transfer reported sent but not yet confirmed releases the answer', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+
+  const { json } = await send(
+    env,
+    toolCall('search_regulatory_changes', { query: 'capital' }, paymentFor(challenge, { nonce: '66' })),
+    { facilitator: fakeFacilitator({ pending: true }) }
+  );
+  assert.equal(json.result.isError, undefined, 'a payer is never charged with nothing to show for it');
+  assert.match(json.result.content[0].text, /capital adequacy/);
+  assert.equal(json.result._meta['x402/payment-response'].errorReason, 'settlement_pending');
+  assert.ok((await usage(db)).includes('search_regulatory_changes paid 1'));
+});
+
+test('one payment buys one answer, across Worker instances', async () => {
+  // Each send builds a fresh gate, as a second Worker instance would. The
+  // claim is held in D1, so the second presentation is refused.
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+  const payment = paymentFor(challenge, { nonce: '77' });
+
+  const first = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }, payment), {
+    facilitator: fakeFacilitator({ pending: true }),
+  });
+  assert.match(first.json.result.content[0].text, /capital adequacy/);
+
+  const facilitator = fakeFacilitator();
+  const second = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }, payment), { facilitator });
+  assert.equal(second.json.result.isError, true);
+  assert.equal(second.json.result.structuredContent.error, 'invalid_transaction_state');
+  assert.equal(facilitator.seen.verify.length, 0, 'refused before the facilitator is asked');
+
+  const { results } = await db.prepare('SELECT claim, expires_at FROM payment_claims').all();
+  assert.equal(results.length, 1);
+  assert.match(results[0].claim, /^[0-9a-f]{64}$/, 'only a hash of the claim is kept');
+});
+
+test('a payment whose claim cannot be kept is refused, and nothing runs', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+  db.db.exec('DROP TABLE payment_claims');
+
+  const facilitator = fakeFacilitator();
+  const { response, json } = await send(
+    env,
+    toolCall('search_regulatory_changes', { query: 'capital' }, paymentFor(challenge, { nonce: '88' })),
+    { facilitator }
+  );
+  assert.equal(response.status, 503);
+  assert.equal(json.error.code, -32603);
+  assert.ok(!JSON.stringify(json).includes('capital adequacy'));
+  assert.equal(facilitator.seen.verify.length + facilitator.seen.settle.length, 0);
+});
+
+test('/health reports degraded when the tier is on before its tables exist', async () => {
+  const db = await seededDb();
+  db.db.exec('DROP TABLE allowance_counts');
+  const health = await (await worker.fetch(new Request('https://bellwether.dap.solutions/health'), paidSettings(db), {})).json();
+  assert.equal(health.payments.status, 'degraded');
+  assert.match(health.payments.reason, /db:migrate/);
+});
+
+test('with the tier off, a large body is answered as before', async () => {
+  const db = await seededDb();
+  const big = JSON.stringify(toolCall('search_regulatory_changes', { query: 'capital', since: '2000-01-01' + ' '.repeat(MAX_BODY_BYTES) }));
+  const { response } = await send({ DB: db }, null, { raw: big });
+  assert.equal(response.status, 200);
+});
+
 // ---------------------------------------------------------------- housekeeping
 
 test('the cron deletes counts from days that have ended, and only those', async () => {
@@ -536,6 +681,15 @@ test('the cron deletes counts from days that have ended, and only those', async 
   const removed = await purgeAllowanceCounts(db, NOW);
   assert.equal(removed, 2);
   assert.deepEqual((await allowanceRows(db)).map((r) => r.day), ['2026-11-01']);
+});
+
+test('the cron deletes payment claims that have expired, and only those', async () => {
+  const db = new TestD1();
+  await db.prepare('INSERT INTO payment_claims (claim, expires_at) VALUES (?, ?)').bind('old', NOW - 1).run();
+  await db.prepare('INSERT INTO payment_claims (claim, expires_at) VALUES (?, ?)').bind('live', NOW + 60000).run();
+  assert.equal(await purgePaymentClaims(db, NOW), 1);
+  const { results } = await db.prepare('SELECT claim FROM payment_claims').all();
+  assert.deepEqual(results.map((r) => r.claim), ['live']);
 });
 
 test('the scheduled run purges counts alongside the ingest', async () => {
@@ -619,6 +773,8 @@ test('no new file carries an em or en dash', () => {
   for (const file of [
     'src/payments.js',
     'src/pricing.js',
+    'src/claims.js',
+    'test/payments.test.mjs',
     'src/landing.js',
     'src/mcp.js',
     'src/index.js',

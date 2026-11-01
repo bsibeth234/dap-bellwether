@@ -44,9 +44,9 @@ All four are read-only. There is no write surface.
 
 ### Price
 
-Free for everyday use. While the paid tier is on, each caller gets 50 calls a day to the three data tools, counted per network address (IPv6 per /64) and reset at 00:00 UTC. `list_coverage`, `initialize` and `tools/list` are always free.
+Free for everyday use. While the paid tier is on, each caller gets 50 calls a day to the three data tools, counted per network address and reset at 00:00 UTC. An IPv6 caller is counted per /64, and every /64 in a /48 also shares a ceiling of ten allowances, so a larger block cannot be rotated into free calls. `list_coverage`, `initialize` and `tools/list` are always free.
 
-Past that, each call costs $0.02 in USDC on Base, paid per call with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and a plain sentence saying when the allowance resets. A call that fails is never charged, and an answer is released only after its payment settles.
+Past that, each call costs $0.02 in USDC on Base, paid per call with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and a plain sentence saying when the allowance resets. A call that fails is never charged and never counted. An answer is released only once its payment has been sent to the chain, and one payment buys one answer however many Worker instances it reaches.
 
 The paid tier is off until it is switched on (see Deploying). While it is off, every call is free and nothing is counted per caller. The landing page, `/health` and the MCP `instructions` all say which state is live.
 
@@ -131,7 +131,7 @@ The payment code in `src/x402/` is the DAP Agent Payments library, vendored unch
 It is off until `X402_PAY_TO` is set. Switching it on is settings, not code:
 
 ```bash
-npm run db:migrate                                     # adds allowance_counts and tool_usage_daily
+npm run db:migrate                                     # adds allowance_counts, payment_claims and tool_usage_daily
 openssl rand -hex 32 | npx wrangler secret put ALLOWANCE_KEY
 npx wrangler secret put CDP_API_KEY_ID                 # a Coinbase Developer Platform API key
 npx wrangler secret put CDP_API_KEY_SECRET
@@ -139,7 +139,9 @@ npx wrangler secret put X402_PAY_TO                    # the wallet that receive
 curl -s https://bellwether.dap.solutions/health        # payments.status should read "on"
 ```
 
-`X402_NETWORKS` (Base mainnet, `eip155:8453`) and `FREE_CALLS_PER_DAY` (50) are plain settings in `wrangler.toml`. A setting that is present but wrong leaves the tier off and `/health` names the problem, so a bad setting costs revenue and never costs a light user an answer. Deleting `X402_PAY_TO` switches it off again.
+`X402_NETWORKS` (Base mainnet, `eip155:8453`) and `FREE_CALLS_PER_DAY` (50) are plain settings in `wrangler.toml`. A setting that is present but wrong leaves the tier off and `/health` names the problem, so a bad setting costs revenue and never costs a light user an answer. A tier switched on before the migration reports `degraded` on `/health`, because it answers metered calls free until the tables exist. Deleting `X402_PAY_TO` switches it off again.
+
+Known gap, shared with the Foundry edge because it is library code: if the facilitator does not answer a settlement within 30 seconds, the caller is told to resend the same payment, and a resend after the transfer has in fact landed is refused rather than answered. Fix it in dap-foundry and copy it across.
 
 Usage, with no caller attached:
 
@@ -167,18 +169,19 @@ Add an entry to `SOURCES` in `src/sources.js`, run `npm run verify:sources`, and
 
 ## Privacy policy
 
-The connector keeps no accounts, no email addresses and no network addresses. This page counts visits without cookies or identifiers.
+The connector keeps no accounts and no email addresses. This page counts visits without cookies or identifiers.
 
 This section is kept word for word in step with the privacy section rendered on the landing page, from `PRIVACY` in `src/landing.js`. A test fails if they differ. Change one and change the other.
 
-- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts described below. Nothing else a user sends is written to the database.
+- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.
 - **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.
-- **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed one-way hash of its network address, bound to the day: never the address itself, and never with the query. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
+- **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
+- **Payment claims.** For each paid call, a one-way hash of its payment authorization is kept until the authorization expires, at most a day, so one payment cannot buy two answers. It holds no query, and the wallet and nonce inside it cannot be read back.
 - **Accounts.** There are none. The service has no sign in, so it holds no credentials or email addresses.
 - **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
 - **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
-- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends. Request parameters are not retained.
-- **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.
+- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.
+- **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. The Worker keeps no request logs: it logs errors and the collection summary, never a caller's address or query. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.
 - **Contact.** bsibeth@dap.solutions
 
 ## Licence

@@ -84,3 +84,12 @@ CREATE TABLE IF NOT EXISTS tool_usage_daily (
   calls   INTEGER NOT NULL,
   PRIMARY KEY (day, tool, outcome)
 ) WITHOUT ROWID;
+
+-- Payment claims, while the paid tier is on. One row per paid call, held from
+-- verification until the payment authorization expires (at most a day), so
+-- one signed payment cannot buy two answers on two Worker instances. claim is
+-- a SHA-256 of the gate's claim key; no wallet, nonce or query is readable.
+CREATE TABLE IF NOT EXISTS payment_claims (
+  claim      TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL            -- epoch milliseconds
+) WITHOUT ROWID;

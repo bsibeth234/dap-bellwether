@@ -10,7 +10,8 @@
  * paid tier is on, heavy use of the data tools pays per call (payments.js).
  */
 
-import { handleMcp, purgeAllowanceCounts } from './payments.js';
+import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.js';
+import { purgePaymentClaims } from './claims.js';
 import { pricingFor, pricingSummary } from './pricing.js';
 import { runIngest } from './ingest.js';
 import { countChanges, lastIngestRun, getSourceHealth } from './db.js';
@@ -28,6 +29,20 @@ import { serveAsset } from './assets.js';
  */
 export function isFallbackHost(hostname) {
   return String(hostname).toLowerCase().endsWith('.workers.dev');
+}
+
+/**
+ * The pricing summary for /health. A tier switched on before its tables exist
+ * answers every metered call free, so it reports degraded and says why.
+ */
+async function paymentsHealth(env) {
+  const summary = pricingSummary(pricingFor(env));
+  if (summary.status !== 'on' || (await paymentStoreReady(env.DB))) return summary;
+  return {
+    ...summary,
+    status: 'degraded',
+    reason: 'The payment tables are missing, so metered calls are answered free. Run npm run db:migrate.',
+  };
 }
 
 export default {
@@ -62,7 +77,7 @@ export default {
             error: (health[s.id] || {}).last_error || null,
           })),
           lastRun: run || null,
-          payments: pricingSummary(pricingFor(env)),
+          payments: await paymentsHealth(env),
         });
       } catch (err) {
         return Response.json(
@@ -104,7 +119,7 @@ export default {
     // 00:00 UTC run is the first after each day ends, so a count lives about
     // a day. Its own job, so a failed ingest never keeps a count alive.
     ctx.waitUntil(
-      purgeAllowanceCounts(env.DB, Date.now()).catch((err) => {
+      Promise.all([purgeAllowanceCounts(env.DB, Date.now()), purgePaymentClaims(env.DB, Date.now())]).catch((err) => {
         console.error(`Bellwether allowance purge failed: ${err && err.message ? err.message : String(err)}`);
       })
     );

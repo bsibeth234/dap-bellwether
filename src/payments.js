@@ -5,24 +5,25 @@
  *   a data tool, within the allowance       answered free, one more on the caller's count
  *   a data tool, past the allowance         a payment required result, with the price
  *   a data tool, with a payment attached    verified, answered, settled, then released
- *   a call that fails                        never charged
+ *   a call that fails                        never charged, never counted
  *
  * With the paid tier off, every call is free and nothing is counted per caller.
  * In both states a daily total per tool, with no caller attached, is kept so
  * we know what the service is actually used for.
  *
  * The caller is the network address the request came from, IPv6 taken to its
- * /64 because one host usually holds a whole /64. It is never stored. What is
- * stored is a keyed one-way hash of it, bound to the day, and the rows are
- * deleted by the first scheduled run after that day ends.
+ * /64 because one host usually holds a whole /64, with a shared ceiling across
+ * the /48 so a larger block cannot be rotated into free allowances. The address
+ * is never stored. What is stored is a keyed hash of it, bound to the day, and
+ * the rows are deleted by the first scheduled run after that day ends.
  *
- * The server always receives the text that was inspected here. A message that
- * cannot be read as one JSON-RPC message the same way twice is refused rather
- * than passed through unpriced.
+ * The server receives the message inspected here, re-serialized, never the
+ * raw bytes. A body that does not parse is answered here as a parse error, so
+ * no difference between two readers can carry a call past the meter.
  */
 
 import { handleMcpRequest, isAllowedOrigin } from './mcp.js';
-import { METERED_TOOLS, pricingFor } from './pricing.js';
+import { METERED_TOOLS, NETWORK_ALLOWANCE_MULTIPLE, pricingFor } from './pricing.js';
 import { TOOLS } from './tools.js';
 
 /** Largest request body read. MCP messages here are a few hundred bytes. */
@@ -97,6 +98,22 @@ export function callerAddress(request) {
     .join(':')}::/64`;
 }
 
+/**
+ * Every count a call is held to: the address itself, and for IPv6 its /48 at
+ * a higher ceiling.
+ *
+ * @returns {{ address: string, limit: number }[]}
+ */
+export function callerScopes(request, freeCallsPerDay) {
+  const address = callerAddress(request);
+  const scopes = [{ address, limit: freeCallsPerDay }];
+  if (address.endsWith('::/64')) {
+    const network = `${address.slice(0, -'::/64'.length).split(':').slice(0, 3).join(':')}::/48`;
+    scopes.push({ address: network, limit: freeCallsPerDay * NETWORK_ALLOWANCE_MULTIPLE });
+  }
+  return scopes;
+}
+
 let hmacKey = { secret: null, key: null };
 
 /** A keyed one-way hash of the caller, bound to the day, so no two days link. */
@@ -115,16 +132,47 @@ export async function callerHash(secret, day, address) {
   return [...new Uint8Array(mac).slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Adds one to the caller's count for the day and returns the new count. */
-export async function countCall(db, day, caller) {
-  const row = await db
+/**
+ * Adds one to each count for the day, in one statement, and returns the new
+ * counts by caller hash.
+ */
+export async function countCalls(db, day, callers) {
+  const values = callers.map(() => '(?, ?, 1)').join(', ');
+  const { results } = await db
     .prepare(
-      'INSERT INTO allowance_counts (day, caller, calls) VALUES (?, ?, 1) ' +
-        'ON CONFLICT (day, caller) DO UPDATE SET calls = calls + 1 RETURNING calls'
+      `INSERT INTO allowance_counts (day, caller, calls) VALUES ${values} ` +
+        'ON CONFLICT (day, caller) DO UPDATE SET calls = calls + 1 RETURNING caller, calls'
     )
-    .bind(day, caller)
-    .first();
-  return Number(row.calls);
+    .bind(...callers.flatMap((caller) => [day, caller]))
+    .all();
+  return new Map(results.map((row) => [row.caller, Number(row.calls)]));
+}
+
+/** Gives back the count taken for a call that failed. */
+export async function refundCalls(db, day, callers) {
+  await db
+    .prepare(
+      `UPDATE allowance_counts SET calls = calls - 1 WHERE day = ? AND caller IN (${callers
+        .map(() => '?')
+        .join(', ')}) AND calls > 0`
+    )
+    .bind(day, ...callers)
+    .run();
+}
+
+/**
+ * Whether the tables the paid tier writes exist. /health asks, so a tier
+ * switched on before the migration shows as degraded instead of quietly
+ * answering every call free.
+ */
+export async function paymentStoreReady(db) {
+  try {
+    await db.prepare('SELECT 1 FROM allowance_counts WHERE 0').all();
+    await db.prepare('SELECT 1 FROM payment_claims WHERE 0').all();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Adds one to a tool's daily total for an outcome. No caller is recorded. */
@@ -155,8 +203,8 @@ function noteUsage(env, ctx, day, tool, outcome) {
 
 /**
  * Reads a request body without holding more than `max` bytes, then decodes it
- * as UTF-8 the way Request.json() does, so what is inspected here is what the
- * server would have read.
+ * as UTF-8. `max` is Infinity while the paid tier is off, so nothing that was
+ * answered before is refused now.
  */
 async function readCapped(request, max) {
   const declared = request.headers.get('content-length');
@@ -237,7 +285,8 @@ async function paidOutcome(response) {
     const body = await response.clone().json();
     const result = body && body.result;
     if (isObject(result) && isObject(result._meta) && isObject(result._meta[PAYMENT_RESPONSE_META])) {
-      if (result._meta[PAYMENT_RESPONSE_META].success === true) return 'paid';
+      const receipt = result._meta[PAYMENT_RESPONSE_META];
+      if (receipt.success === true || receipt.errorReason === 'settlement_pending') return 'paid';
     }
     if (isObject(result) && result.isError === true && isObject(result.structuredContent)) {
       if (result.structuredContent.x402Version !== undefined) return 'challenged';
@@ -266,22 +315,25 @@ export async function handleMcp(request, env, ctx, overrides) {
   }
 
   const pricing = pricingFor(env, overrides);
+  const on = pricing.status === 'on';
   const now = (overrides && overrides.now) || Date.now;
-  const text = await readCapped(request, MAX_BODY_BYTES);
+  const text = await readCapped(request, on ? MAX_BODY_BYTES : Infinity);
   if (text === null) return rpcError(null, -32600, 'Request too large', 413);
 
-  const forward = () => handleMcpRequest(withBody(request, text), env);
   let message;
   try {
     message = JSON.parse(text);
   } catch {
-    return forward();
+    // Answered here, as the server would answer it. Never passed on: a body
+    // this reader refuses might still be one another reader accepts.
+    return rpcError(null, -32700, 'Parse error', 400);
   }
+  const forward = () => handleMcpRequest(withBody(request, JSON.stringify(message)), env);
   const day = utcDay(now());
 
   if (Array.isArray(message)) {
     const calls = message.map(classify);
-    if (pricing.status === 'on' && calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
+    if (on && calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
       return rpcError(
         null,
         -32600,
@@ -295,39 +347,75 @@ export async function handleMcp(request, env, ctx, overrides) {
 
   const call = classify(message);
   if (call.kind === 'other') return forward();
-  if (pricing.status !== 'on' || call.kind === 'free') {
+  if (!on || call.kind === 'free') {
     noteUsage(env, ctx, day, call.tool, 'unmetered');
     return forward();
   }
 
-  const gated = () => pricing.gate.handle(withBody(request, text), (rebuilt) => handleMcpRequest(rebuilt, env));
+  const gated = () =>
+    pricing.gate.handle(withBody(request, JSON.stringify(message)), (rebuilt) => handleMcpRequest(rebuilt, env));
 
   // A call no strict reader would run is refused by the gate, never counted.
   if (call.kind === 'malformed') return gated();
 
+  // A tools/call notification gets no answer from the server, so it is not counted.
+  if (message.id === undefined || message.id === null) return forward();
+
   // A caller who sends a payment has chosen to pay, allowance or not.
   if (hasPayment(message)) {
-    const response = await gated();
+    let response;
+    try {
+      response = await gated();
+    } catch (err) {
+      // The claim on the payment could not be kept. Nothing ran and nothing was charged.
+      console.error(`Bellwether payment claim failed: ${err && err.message ? err.message : String(err)}`);
+      return rpcError(message.id, -32603, 'Payment service unavailable. Retry shortly.', 503);
+    }
     noteUsage(env, ctx, day, call.tool, await paidOutcome(response));
     return response;
   }
 
-  let used;
+  const scopes = callerScopes(request, pricing.freeCallsPerDay);
+  let hashes;
+  let counts;
   try {
-    used = await countCall(env.DB, day, await callerHash(pricing.allowanceKey, day, callerAddress(request)));
+    hashes = await Promise.all(scopes.map((scope) => callerHash(pricing.allowanceKey, day, scope.address)));
+    counts = await countCalls(env.DB, day, hashes);
   } catch (err) {
     // The count could not be kept. The call is answered free rather than
-    // refused: a light user must not lose an answer to our storage.
+    // refused: a light user must not lose an answer to our storage. /health
+    // shows the store as missing (paymentStoreReady).
     console.error(`Bellwether allowance count failed: ${err && err.message ? err.message : String(err)}`);
     noteUsage(env, ctx, day, call.tool, 'allowance');
     return forward();
   }
 
-  if (used <= pricing.freeCallsPerDay) {
-    noteUsage(env, ctx, day, call.tool, 'allowance');
-    return forward();
+  if (scopes.every((scope, i) => (counts.get(hashes[i]) || 0) <= scope.limit)) {
+    const response = await forward();
+    if (await failed(response)) {
+      // A call that fails does not use up the allowance.
+      const job = refundCalls(env.DB, day, hashes).catch((err) => {
+        console.error(`Bellwether allowance refund failed: ${err && err.message ? err.message : String(err)}`);
+      });
+      if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
+      else await job;
+      noteUsage(env, ctx, day, call.tool, 'not_charged');
+    } else {
+      noteUsage(env, ctx, day, call.tool, 'allowance');
+    }
+    return response;
   }
 
   noteUsage(env, ctx, day, call.tool, 'challenged');
   return explainAllowance(await gated(), pricing, now());
+}
+
+/** Whether the server's answer is an error: a JSON-RPC error or a tool result marked isError. */
+async function failed(response) {
+  try {
+    const body = await response.clone().json();
+    return Boolean(body && (body.error || (isObject(body.result) && body.result.isError === true)));
+  } catch {
+    return true;
+  }
 }

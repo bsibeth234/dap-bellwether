@@ -23,6 +23,7 @@ import { gateFromEnv } from './x402/env.ts';
 import { createGate } from './x402/gate.ts';
 import { usdcFor } from './x402/networks.ts';
 import { TOOLS } from './tools.js';
+import { d1ReplayGuard } from './claims.js';
 
 /** The tools the allowance counts. Everything else is free. */
 export const METERED_TOOLS = Object.freeze([
@@ -36,6 +37,13 @@ export const PRICE = '$0.02';
 
 /** Calls per caller per UTC day before a metered tool asks for payment. */
 export const DEFAULT_FREE_CALLS_PER_DAY = 50;
+
+/**
+ * An IPv6 caller is counted per /64, and every /64 in a /48 also shares a
+ * ceiling of this many allowances, so a holder of a /56 or a /48 cannot rotate
+ * addresses into thousands of free allowances.
+ */
+export const NETWORK_ALLOWANCE_MULTIPLE = 10;
 
 /** The keyed hash needs a real secret. Shorter than this and it is refused. */
 const MIN_ALLOWANCE_KEY_LENGTH = 32;
@@ -141,7 +149,19 @@ function build(env, overrides) {
     };
   }
 
-  const options = { ...SERVICE, tags: [...SERVICE.tags], routes: [], mcp: { path: '/mcp', tools: meteredTools() } };
+  // acceptPending: when the facilitator reports the transfer sent but not yet
+  // confirmed, the answer is released rather than withheld, so a payer is never
+  // charged with nothing to show for it. Safe only because the claim on each
+  // payment is shared through D1 (claims.js), not held per instance.
+  const now = (overrides && overrides.now) || Date.now;
+  const options = {
+    ...SERVICE,
+    tags: [...SERVICE.tags],
+    routes: [],
+    mcp: { path: '/mcp', tools: meteredTools() },
+    replayGuard: d1ReplayGuard(() => env.DB, now),
+    acceptPending: true,
+  };
   let gate;
   try {
     // Always built from the settings first, so a test that injects a
@@ -201,6 +221,6 @@ export function pricingInstructions(pricing) {
     `${METERED_TOOLS.join(', ').replace(/, ([^,]*)$/, ' and $1')} are free for ${pricing.freeCallsPerDay} calls per caller each UTC day.`,
     `After that each call costs ${pricing.price} in USDC on ${pricing.network.label}, paid per call with x402.`,
     'A client that cannot pay gets a payment required result until the allowance resets at 00:00 UTC.',
-    'A call that fails is never charged. list_coverage is always free.',
+    'A call that fails is never charged and never counted. list_coverage is always free.',
   ].join(' ');
 }
