@@ -110,11 +110,14 @@ CREATE TABLE IF NOT EXISTS licences (
 
 -- What each licence used, per UTC day and endpoint, for the invoice. Answered
 -- calls to data tools and data endpoints only. No query, no address. Kept
--- for as long as invoices and audits need it.
+-- for as long as invoices and audits need it. One DAP licence covers several
+-- services: the Compute Market Tracker agent (dap-solutions-site,
+-- workers/compute-agent) binds this database as LICENCES and counts its calls
+-- under endpoint names starting compute:.
 CREATE TABLE IF NOT EXISTS licence_usage_daily (
   day        TEXT NOT NULL,                -- YYYY-MM-DD, UTC
   licence_id TEXT NOT NULL,
-  endpoint   TEXT NOT NULL,                -- an MCP tool name, or api:search, api:recent, api:change
+  endpoint   TEXT NOT NULL,                -- an MCP tool name, or api:search, api:recent, api:change; compute: for the Compute Market Tracker
   calls      INTEGER NOT NULL,
   PRIMARY KEY (day, licence_id, endpoint)
 ) WITHOUT ROWID;

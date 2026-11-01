@@ -132,6 +132,14 @@ Two failures were ours rather than the regulators':
   or a bare `X-API-Key`; any other Authorization header is ignored and the
   free or paid rails apply as before. A licensed answer is counted before it
   is released, or withheld with 503.
+- **This database holds the licences for all of DAP.** The Compute Market
+  Tracker agent (dap-solutions-site, `workers/compute-agent`) binds it as
+  `LICENCES` and counts its calls as `compute:...`. A change to the
+  `licences` or `licence_usage_daily` tables is a change to both services:
+  update `workers/compute-agent/test/fixtures/licences.sql` too.
+- **Run `licence.mjs check` a few seconds after a deploy.** Run straight
+  after `wrangler deploy`, it can still reach the old version at the edge and
+  fail; the second run passes.
 - **Keep record ids out of paid paths.** The gate sends the request path to
   the facilitator and strips the query, so anything a caller asked for goes
   in the query (`/api/change?id=`), never the path.
