@@ -21,7 +21,7 @@
 #
 # Off again at any time: npx wrangler secret delete X402_PAY_TO
 
-set -euo pipefail
+set -Eeuo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -33,6 +33,9 @@ trap 'rm -rf "$work"' EXIT
 
 say() { printf '%s\n' "$*"; }
 stop() { say ""; say "Stopped: $*"; exit 1; }
+# Any command that fails without its own message says where, instead of
+# leaving the window silent. Never prints a value, only the line number.
+trap 'rc=$?; say ""; say "Stopped at line $LINENO of scripts/switch-on.sh (exit $rc). Send Claude a screenshot."; exit $rc' ERR
 
 say ""
 say "DAP Bellwether: switch on the paid tier"
@@ -48,20 +51,24 @@ node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a
 # 1. Tests.
 say "1/7 Installing and testing..."
 npm ci --silent >"$work/npm.log" 2>&1 || { tail -n 20 "$work/npm.log"; stop "npm ci failed."; }
-if ! npm test >"$work/test.log" 2>&1; then
-  grep -E "^not ok" "$work/test.log" | head -n 10
+# The TAP reporter, named, because newer Node versions print a different
+# summary by default and this script reads the summary.
+if ! "${NODE_TS[@]}" --test --test-reporter=tap test/*.test.mjs >"$work/test.log" 2>&1; then
+  { grep -E "^not ok" "$work/test.log" || tail -n 20 "$work/test.log"; } | head -n 20
   stop "the tests failed. Nothing was changed."
 fi
-say "    $(grep -E '^# pass' "$work/test.log" | sed 's/# //') tests, $(grep -E '^# fail' "$work/test.log" | sed 's/# //')"
+passed="$(grep -E '^# pass' "$work/test.log" | head -n 1 | sed 's/# pass //' || true)"
+failed="$(grep -E '^# fail' "$work/test.log" | head -n 1 | sed 's/# fail //' || true)"
+say "    ${passed:-?} tests passed, ${failed:-?} failed"
 
 # 2. The wallet and the CDP key.
 say ""
-read -r -p "2/7 Wallet that receives payments (public address, starts 0x): " pay_to
+read -r -p "2/7 Wallet that receives payments (public address, starts 0x): " pay_to || stop "no wallet entered. Nothing was changed."
 pay_to="${pay_to//[[:space:]]/}"
 [[ "$pay_to" =~ ^0x[0-9a-fA-F]{40}$ ]] || stop "that is not a 0x address with 40 hex characters. Nothing was changed."
 
 say "    Coinbase CDP API key."
-read -r -p "    Drag the downloaded key file here and press Enter, or just press Enter to paste: " key_file
+read -r -p "    Drag the downloaded key file here and press Enter, or just press Enter to paste: " key_file || key_file=""
 key_file="$(printf '%s' "$key_file" | sed -E "s/^[[:space:]]+//; s/[[:space:]]+\$//; s/^'(.*)'\$/\\1/; s/^\"(.*)\"\$/\\1/; s/\\\\(.)/\\1/g")"
 cdp_id=""
 cdp_secret=""
@@ -72,10 +79,10 @@ if [ -n "$key_file" ]; then
   cdp_secret="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const v=j.privateKey;if(typeof v!=="string"||!v)process.exit(3);process.stdout.write(v)' "$key_file")" \
     || stop "the key file has no privateKey. Nothing was changed."
 else
-  read -r -p "    API key id: " cdp_id
+  read -r -p "    API key id: " cdp_id || stop "no API key id. Nothing was changed."
   cdp_id="${cdp_id//[[:space:]]/}"
   [ -n "$cdp_id" ] || stop "no API key id. Nothing was changed."
-  read -r -s -p "    API key secret (hidden as you paste, then press Enter): " cdp_secret
+  read -r -s -p "    API key secret (hidden as you paste, then press Enter): " cdp_secret || stop "no API key secret. Nothing was changed."
   say ""
   [ -n "$cdp_secret" ] || stop "no API key secret. Nothing was changed."
 fi
