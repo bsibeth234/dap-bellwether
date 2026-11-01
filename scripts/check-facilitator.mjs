@@ -4,7 +4,7 @@
  * proves the key works, which is why switch-on.sh runs it before storing it.
  *
  *   X402_NETWORKS=eip155:8453 CDP_API_KEY_ID=... CDP_API_KEY_SECRET=... \
- *     node --experimental-transform-types --disable-warning=ExperimentalWarning scripts/check-facilitator.mjs
+ *     node --import ./test/register-ts.mjs scripts/check-facilitator.mjs
  *
  * Prints PASS or FAIL per network and never prints the key.
  */

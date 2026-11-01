@@ -26,7 +26,7 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 export WRANGLER_SEND_METRICS=false
-NODE_TS=(node --experimental-transform-types --disable-warning=ExperimentalWarning)
+NODE_TS=(node --disable-warning=ExperimentalWarning --import ./test/register-ts.mjs)
 HOST="https://bellwether.dap.solutions"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -45,8 +45,8 @@ say ""
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || stop "check out main first: git checkout main && git pull"
 git diff --quiet && git diff --cached --quiet || stop "this checkout has uncommitted changes."
 [ -f src/payments.js ] || stop "this checkout does not have the paid tier. Run: git pull"
-node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=7)?0:1)' \
-  || stop "Node 22.7 or later is needed. This Mac has $(node --version)."
+node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=5)?0:1)' \
+  || stop "Node 22.5 or later is needed. This Mac has $(node --version)."
 
 # 1. Tests.
 say "1/7 Installing and testing..."
