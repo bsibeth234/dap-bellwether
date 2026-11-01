@@ -15,6 +15,7 @@ what it does.
 | Fallback URL | https://dap-bellwether.dap-solutions.workers.dev, kept enabled via `workers_dev = true` |
 | Custom domain bound | 2026-07-25. Creates one proxied DNS record for `bellwether` in the dap.solutions zone and its certificate. No other record in the zone was touched. |
 | D1 database names | `bellwether` (records, usage, payments) and `dap-licences` (licences only, `licences.sql`, shared with the Compute Market Tracker agent) |
+| `dap-licences` | Created 2026-11-01 about 16:35 UTC in the Cloudflare dashboard, id `e22f1525-8bf3-43f1-a6da-89ca00a475bc`, automatic location. Both tables from `licences.sql` added from the dashboard console and checked against `sqlite_master`. |
 | workers.dev subdomain | dap-solutions |
 | Cron | `0 */6 * * *`, every six hours |
 | First successful ingest | 2026-07-25, 10 of 10 sources, 117 records |
