@@ -451,8 +451,29 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
     if (on && calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
       return rpcError(null, -32600, `Send each call to ${METERED_TOOLS.join(', ')} as its own request, not in a batch.`, 400);
     }
-    for (const c of calls) if (c.kind === 'free' || c.kind === 'metered') noteUsage(env, ctx, day, c.tool, 'unmetered');
-    return send(message);
+    for (const c of calls) if (c.kind === 'free') noteUsage(env, ctx, day, c.tool, 'unmetered');
+    const metered = message
+      .map((m, i) => ({ id: m && m.id, tool: calls[i].tool, kind: calls[i].kind }))
+      .filter((c) => c.kind === 'metered' && c.id !== undefined && c.id !== null);
+    const response = await send(message.map(withoutPayment));
+    if (metered.length === 0) return response;
+    // With the tier off a licensee may batch, and each answered data call in
+    // the batch is still counted before the batch is released.
+    let replies = [];
+    try {
+      const body = await response.clone().json();
+      replies = Array.isArray(body) ? body : [];
+    } catch {
+      replies = [];
+    }
+    for (const call of metered) {
+      const reply = replies.find((r) => isObject(r) && r.id === call.id);
+      const answered = reply && !reply.error && !(isObject(reply.result) && reply.result.isError === true);
+      if (!answered) continue;
+      if (!(await countLicensedCall(env.DB, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
+      noteUsage(env, ctx, day, call.tool, 'licensed');
+    }
+    return response;
   }
 
   const call = classify(message);
@@ -483,7 +504,7 @@ function isRpcId(id) {
 
 /** The message with any x402 payment removed from params._meta. */
 function withoutPayment(message) {
-  if (!hasPayment(message)) return message;
+  if (!isObject(message) || !hasPayment(message)) return message;
   const meta = { ...message.params._meta };
   delete meta[PAYMENT_META];
   const { _meta: _dropped, ...params } = message.params;

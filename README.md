@@ -61,7 +61,7 @@ The same records as JSON over HTTPS GET, for agents and systems that do not spea
 | `GET /api/change?id=` | $0.01 from the first call |
 | `GET /api/coverage` | Free |
 
-There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. `since` and `until` are compared as UTC times: a date alone covers the whole day, and a time without a zone is UTC. A date the regulator did not publish is `null`, never our collection time. The record id is a query parameter so it never reaches the payment facilitator, which sees the path only.
+There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. `since` and `until` are compared as UTC times: a year, a month or a date alone covers that whole period, a time may use `T` or a space, and a time without a zone is UTC. A date the regulator did not publish is `null`, never our collection time. The record id is a query parameter so it never reaches the payment facilitator, which sees the path only.
 
 ### Institutional licences
 
@@ -115,7 +115,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 141 tests, no network required (Node 22.5 or later)
+npm test                     # 144 tests, no network required (Node 22.5 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 

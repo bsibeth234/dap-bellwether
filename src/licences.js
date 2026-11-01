@@ -10,8 +10,8 @@
  * a data tool or data endpoint is counted for that licence and day before the
  * answer is released, which is what the invoice reads.
  *
- * Any header that mentions dapk_ is treated as a licence attempt. Any other
- * Authorization header is ignored, so a client that sends an unrelated token
+ * An Authorization or X-API-Key header that mentions dapk_ is treated as a
+ * licence attempt. Any other Authorization header is ignored, so a client that sends an unrelated token
  * keeps the free and pay per call rails exactly as before. A DAP key that is
  * unknown, revoked or sent in the wrong shape is refused with 401 rather than
  * quietly answered under another rail: a licensee whose key stops working
@@ -34,12 +34,13 @@ export const LICENCE_ID_PATTERN = /^lic_[0-9a-f]{8}$/;
 /**
  * The DAP key a request carries.
  *
- * A DAP key is accepted in exactly two shapes: `Authorization: Bearer <key>`
- * or `X-API-Key: <key>`. Any header that mentions dapk_ in another shape, or
- * two headers carrying different keys, is malformed and refused: a key sent
+ * Two headers are read: Authorization and X-API-Key. A DAP key is accepted
+ * in exactly two shapes, `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+ * Either header mentioning dapk_ (in any case) in another shape, or the two
+ * headers carrying different keys, is malformed and refused: a key sent
  * slightly wrong must fail loudly, never slip through to the free or paid
- * rails. A header that does not mention dapk_ at all is not ours, and is
- * ignored.
+ * rails. A header that does not mention dapk_ is not ours, and is ignored, as
+ * is a key sent in any other header.
  *
  * @returns {{ status: 'none' } | { status: 'malformed' } | { status: 'key', key: string }}
  */
@@ -47,12 +48,12 @@ export function presentedKey(request) {
   const auth = request.headers.get('Authorization');
   const apiKey = request.headers.get('X-API-Key');
   const keys = [];
-  if (auth !== null && auth.includes('dapk_')) {
+  if (auth !== null && /dapk_/i.test(auth)) {
     const bearer = /^\s*Bearer[ \t]+(dapk_[^\s,]+)\s*$/i.exec(auth);
     if (!bearer) return { status: 'malformed' };
     keys.push(bearer[1]);
   }
-  if (apiKey !== null && apiKey.includes('dapk_')) {
+  if (apiKey !== null && /dapk_/i.test(apiKey)) {
     const value = apiKey.trim();
     if (!/^dapk_[^\s,]+$/.test(value)) return { status: 'malformed' };
     keys.push(value);

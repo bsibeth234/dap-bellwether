@@ -151,8 +151,7 @@ async function selfTest() {
   const after = await fetch(`${origin}/api/search?query=capital&limit=1`, { headers: auth });
   check('after revoking, the key is refused', after.status === 401, `HTTP ${after.status}`);
 
-  // Counts are written just after each answer goes out, so give them a moment.
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Each licensed answer is counted before it is released, so the counts are already there.
   const counted = d1(
     `SELECT endpoint, calls FROM licence_usage_daily WHERE licence_id = '${licence.id}' ORDER BY endpoint;`
   );

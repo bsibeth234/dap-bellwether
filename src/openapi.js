@@ -115,8 +115,8 @@ export function openApiDocument() {
             jurisdiction,
             { name: 'regulator', in: 'query', required: false, description: 'Short name, for example OSFI, SEC, FCA, ESMA.', schema: { type: 'string', maxLength: 20 } },
             { name: 'category', in: 'query', required: false, description: 'Publication type.', schema: { type: 'string', enum: CATEGORIES } },
-            { name: 'since', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A date alone starts at 00:00 UTC that day. A time without a zone is UTC.', schema: { type: 'string' } },
-            { name: 'until', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A date alone runs to the end of that UTC day. A time without a zone is UTC.', schema: { type: 'string' } },
+            { name: 'since', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A year, month or date alone starts at the beginning of that period in UTC. A time without a zone is UTC.', schema: { type: 'string' } },
+            { name: 'until', in: 'query', required: false, description: 'ISO 8601 date or timestamp, inclusive. A year, month or date alone runs to the end of that period in UTC. A time without a zone is UTC.', schema: { type: 'string' } },
             limit(20),
           ],
           responses: {

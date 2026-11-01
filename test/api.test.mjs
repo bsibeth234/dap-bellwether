@@ -5,6 +5,7 @@ import { TestD1 } from './d1-shim.mjs';
 import worker from '../src/index.js';
 import { handleApi, pricedByGate, resolveEndpoint, parseParams } from '../src/api.js';
 import { handleMcp } from '../src/payments.js';
+import { dateBound } from '../src/tools.js';
 import { pricingFor, API_ENDPOINTS } from '../src/pricing.js';
 import { openApiDocument } from '../src/openapi.js';
 import { runIngest } from '../src/ingest.js';
@@ -639,9 +640,23 @@ test('with the paid tier off, a licence still answers, is counted, and may batch
   const auth = { Authorization: `Bearer ${licence.key}` };
   const api = await get(env, '/api/recent', { headers: auth });
   assert.equal(api.response.status, 200);
-  const batch = await mcpCall(env, [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }], auth);
+  const batch = await mcpCall(
+    env,
+    [
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: { query: 'capital' } } },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_regulatory_change', arguments: { id: 'missing' } } },
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'list_coverage', arguments: {} } },
+    ],
+    auth
+  );
   assert.equal(batch.response.status, 200);
-  assert.deepEqual((await licenceUsage(db)).map((r) => `${r.endpoint} ${r.calls}`), ['api:recent 1']);
+  assert.equal(batch.json.length, 4);
+  assert.deepEqual(
+    (await licenceUsage(db)).map((r) => `${r.endpoint} ${r.calls}`),
+    ['api:recent 1', 'search_regulatory_changes 2'],
+    'each answered data call in a batch is counted; the failed one and list_coverage are not'
+  );
 });
 
 test('a licence key with a payment header on /api is answered under the licence, never settled', async () => {
@@ -711,4 +726,49 @@ test('the usage report leaves out the self test licence', async () => {
   await db.prepare("INSERT INTO licence_usage_daily (day, licence_id, endpoint, calls) VALUES ('2026-11-02', ?, 'api:search', 3), ('2026-11-02', ?, 'api:search', 2)").bind(real.id, self.id).run();
   const bill = (await db.prepare(usageSql({ month: '2026-11' })).all()).results;
   assert.deepEqual(bill.map((r) => `${r.licensee} ${r.calls}`), ['Example Pension Plan 3']);
+});
+
+// ---------------------------------------------------------------- review round 2
+
+test('dateBound reads the forms people and models send, and refuses impossible ones', () => {
+  const cases = [
+    ['2026-07-21', 'since', '2026-07-21T00:00:00.000Z'],
+    ['2026-07-21', 'until', '2026-07-21T23:59:59.999Z'],
+    ['2026-07', 'since', '2026-07-01T00:00:00.000Z'],
+    ['2026-07', 'until', '2026-07-31T23:59:59.999Z'],
+    ['2026-02', 'until', '2026-02-28T23:59:59.999Z'],
+    ['2026', 'until', '2026-12-31T23:59:59.999Z'],
+    ['2026-07-21T14:00:00Z', 'since', '2026-07-21T14:00:00.000Z'],
+    ['2026-07-21 14:00:00', 'since', '2026-07-21T14:00:00.000Z'],
+    ['2026-07-21T14:00', 'since', '2026-07-21T14:00:00.000Z'],
+    ['2026-07-21T15:00:00+02:00', 'since', '2026-07-21T13:00:00.000Z'],
+    ['2026-07-21T15:00:00+0200', 'since', '2026-07-21T13:00:00.000Z'],
+    ['2026-07-21T14:00:00+0000', 'since', '2026-07-21T14:00:00.000Z'],
+    ['2026-07-21T09:00:00-05:00', 'since', '2026-07-21T14:00:00.000Z'],
+    ['2026-07-21T14:00:00.5Z', 'since', '2026-07-21T14:00:00.500Z'],
+    [' 2026-07-21 ', 'since', '2026-07-21T00:00:00.000Z'],
+  ];
+  for (const [input, edge, want] of cases) assert.equal(dateBound(input, edge), want, `${input} ${edge}`);
+  for (const bad of ['2026-02-30', '2026-13', '2026-07-21T25:00', '2026-07-21T14:60', 'yesterday', '20261001', '', '2026-07-21T14:00:00+2400']) {
+    assert.equal(dateBound(bad, 'since'), null, JSON.stringify(bad));
+  }
+  assert.equal(dateBound(20261001, 'since'), null);
+});
+
+test('the connector answers the space separated form models send', async () => {
+  const db = await seededDb();
+  const r = await mcpCall({ DB: db }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: { since: '2026-07-21 00:00:00', until: '2026-07' } } });
+  assert.match(r.json.result.content[0].text, /capital adequacy/);
+});
+
+test('a DAP key with an upper case prefix is a licence attempt and is refused', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const licence = await issue(db);
+  const shouted = `DAPK_${licence.key.slice(5)}`;
+  for (const headers of [{ Authorization: `Bearer ${shouted}` }, { 'X-API-Key': shouted }]) {
+    assert.equal((await get(env, '/api/search?query=capital', { headers })).response.status, 401);
+    const mcp = await mcpCall(env, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_regulatory_changes', arguments: {} } }, headers);
+    assert.equal(mcp.response.status, 401);
+  }
 });
