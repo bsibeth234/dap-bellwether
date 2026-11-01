@@ -17,6 +17,11 @@
  * quietly answered under another rail: a licensee whose key stops working
  * must find out at once, not be charged in USDC or cut to 50 a day.
  *
+ * Licences live in their own database, dap-licences, bound as LICENCES
+ * (licences.sql). The Compute Market Tracker agent binds the same database,
+ * so one licence covers both services, and neither Worker can reach the
+ * other's records.
+ *
  * The key itself is never stored. The licence row holds a SHA-256 of it; keys
  * are 256 random bits, so an unkeyed hash is enough to make a leaked table
  * useless. Licences are revoked by stamping revoked_at, never deleted, so a
@@ -78,7 +83,7 @@ export async function readLicence(request, env) {
   if (presented.status === 'none') return { status: 'none' };
   if (presented.status === 'malformed' || !KEY_PATTERN.test(presented.key)) return { status: 'invalid' };
   try {
-    const row = await env.DB.prepare(
+    const row = await env.LICENCES.prepare(
       'SELECT id, licensee FROM licences WHERE key_hash = ? AND revoked_at IS NULL'
     )
       .bind(await sha256(presented.key))
@@ -91,28 +96,53 @@ export async function readLicence(request, env) {
   }
 }
 
+const COUNT_SQL =
+  'INSERT INTO licence_usage_daily (day, licence_id, endpoint, calls) VALUES (?, ?, ?, 1) ' +
+  'ON CONFLICT (day, licence_id, endpoint) DO UPDATE SET calls = calls + 1';
+
 /** Adds one to a licence's count for the day and endpoint. */
 export async function recordLicenceUsage(db, day, licenceId, endpoint) {
-  await db
-    .prepare(
-      'INSERT INTO licence_usage_daily (day, licence_id, endpoint, calls) VALUES (?, ?, ?, 1) ' +
-        'ON CONFLICT (day, licence_id, endpoint) DO UPDATE SET calls = calls + 1'
-    )
-    .bind(day, licenceId, endpoint)
-    .run();
+  await db.prepare(COUNT_SQL).bind(day, licenceId, endpoint).run();
 }
 
 /**
- * Counts one answered call for the invoice, before the answer is released.
- * Returns false if the count could not be written, in which case the caller
- * withholds the answer: a licensed answer is never given without being counted.
+ * Counts answered calls for the invoice, before the answers are released.
+ * Several counts go in one D1 batch, which is one transaction: either every
+ * answer in a batch request is counted or none is. Returns false if the
+ * counts could not be written, in which case the caller withholds the
+ * answers: a licensed answer is never given without being counted.
+ *
+ * @param {object} db  the LICENCES binding
+ * @param {string[]} endpoints  one entry per answered call
  */
-export async function countLicensedCall(db, day, licenceId, endpoint) {
+export async function countLicensedCalls(db, day, licenceId, endpoints) {
+  if (endpoints.length === 0) return true;
   try {
-    await recordLicenceUsage(db, day, licenceId, endpoint);
+    if (endpoints.length === 1) {
+      await recordLicenceUsage(db, day, licenceId, endpoints[0]);
+    } else {
+      await db.batch(endpoints.map((endpoint) => db.prepare(COUNT_SQL).bind(day, licenceId, endpoint)));
+    }
     return true;
   } catch (err) {
     console.error(`Bellwether licence usage count failed: ${err && err.message ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+/** Counts one answered call. See countLicensedCalls. */
+export async function countLicensedCall(db, day, licenceId, endpoint) {
+  return countLicensedCalls(db, day, licenceId, [endpoint]);
+}
+
+/** Whether the licence database is bound and its tables exist. */
+export async function licenceStoreReady(db) {
+  if (!db) return false;
+  try {
+    await db.prepare('SELECT 1 FROM licences WHERE 0').all();
+    await db.prepare('SELECT 1 FROM licence_usage_daily WHERE 0').all();
+    return true;
+  } catch {
     return false;
   }
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Issue, revoke, list and bill DAP licences for Bellwether. Run on the Mac
- * that is signed in to Cloudflare, from the repo root.
+ * Issue, revoke, list and bill DAP licences. One licence covers Bellwether and
+ * the Compute Market Tracker; both read the dap-licences database. Run on the
+ * Mac that is signed in to Cloudflare, from the repo root.
  *
  *   node scripts/licence.mjs issue "Example Pension Plan" [--note "Master licence 2026-11"]
  *   node scripts/licence.mjs revoke lic_1a2b3c4d
@@ -11,7 +12,7 @@
  *
  * Add --local to work on the local database instead of the live one
  * (LICENCE_PERSIST_TO names a shared local state folder, for testing two
- * Workers against one licence table).
+ * Workers against one licence database).
  *
  * issue prints the new key once. It is never stored, only its SHA-256 is, so
  * it cannot be shown again: give it to the licensee over a secure channel,
@@ -38,7 +39,7 @@ function d1(sql) {
   const out = execFileSync(
     'npx',
     [
-      'wrangler', 'd1', 'execute', 'bellwether',
+      'wrangler', 'd1', 'execute', 'dap-licences',
       ...(local ? ['--local', ...(process.env.LICENCE_PERSIST_TO ? ['--persist-to', process.env.LICENCE_PERSIST_TO] : [])] : ['--remote']),
       '--json', '--command', sql,
     ],
@@ -83,6 +84,7 @@ try {
     console.log('');
     console.log('They send it as "Authorization: Bearer <key>" (or "X-API-Key: <key>") to');
     console.log('  https://bellwether.dap.solutions/mcp  and  https://bellwether.dap.solutions/api/...');
+    console.log('  https://dap.solutions/compute/mcp  and  https://dap.solutions/compute/api/...');
   } else if (command === 'revoke') {
     const id = params[0];
     if (!id) usage();

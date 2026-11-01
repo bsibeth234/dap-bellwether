@@ -856,6 +856,15 @@ test('no new file carries an em or en dash', () => {
     'wrangler.toml',
     'README.md',
     'src/x402/VENDORED.md',
+    'licences.sql',
+    'src/licences.js',
+    'src/api.js',
+    'src/openapi.js',
+    'scripts/licence.mjs',
+    'scripts/licence-sql.mjs',
+    'test/api.test.mjs',
+    'test/d1-shim.mjs',
+    'CLAUDE.md',
   ]) {
     assert.doesNotMatch(readFileSync(join(root, file), 'utf8'), /[\u2013\u2014]/, file);
   }

@@ -31,6 +31,14 @@ binding = "DB"
 database_name = "bellwether"
 database_id = "cb812950-20d4-45a1-b7c7-531ed0234e7b"
 
+# DAP licences, shared with the Compute Market Tracker agent and nothing else
+# (licences.sql). Created once with: npx wrangler d1 create dap-licences
+# then: npm run db:migrate:licences
+[[d1_databases]]
+binding = "LICENCES"
+database_name = "dap-licences"
+database_id = "DAP_LICENCES_DATABASE_ID"
+
 [observability]
 enabled = true
 

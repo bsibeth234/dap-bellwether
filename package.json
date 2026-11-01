@@ -18,6 +18,8 @@
     "db:create": "wrangler d1 create bellwether",
     "db:migrate": "wrangler d1 execute bellwether --file=./schema.sql --remote",
     "db:migrate:local": "wrangler d1 execute bellwether --file=./schema.sql --local",
+    "db:migrate:licences": "wrangler d1 execute dap-licences --file=./licences.sql --remote",
+    "db:migrate:licences:local": "wrangler d1 execute dap-licences --file=./licences.sql --local",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },

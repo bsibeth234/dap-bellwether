@@ -27,7 +27,7 @@
 import { handleMcpRequest, isAllowedOrigin } from './mcp.js';
 import { METERED_TOOLS, NETWORK_ALLOWANCE_MULTIPLE, pricingFor } from './pricing.js';
 import { TOOLS } from './tools.js';
-import { countLicensedCall, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
+import { countLicensedCall, countLicensedCalls, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
 
 /** Largest request body read. MCP messages here are a few hundred bytes. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -451,14 +451,20 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
     if (on && calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
       return rpcError(null, -32600, `Send each call to ${METERED_TOOLS.join(', ')} as its own request, not in a batch.`, 400);
     }
+    // With the tier off a licensee may batch, and each answered data call in
+    // the batch is counted before the batch is released. Every answer must
+    // match exactly one call, so when a batch holds a data call, each message
+    // that expects an answer carries a string or number id no other message
+    // in the batch uses.
+    if (calls.some((c) => c.kind === 'metered') && !batchIdsDistinct(message)) {
+      return rpcError(null, -32600, 'In a batch with a data call, give each call a string or number id of its own.', 400);
+    }
     for (const c of calls) if (c.kind === 'free') noteUsage(env, ctx, day, c.tool, 'unmetered');
     const metered = message
       .map((m, i) => ({ id: m && m.id, tool: calls[i].tool, kind: calls[i].kind }))
       .filter((c) => c.kind === 'metered' && c.id !== undefined && c.id !== null);
     const response = await send(message.map(withoutPayment));
     if (metered.length === 0) return response;
-    // With the tier off a licensee may batch, and each answered data call in
-    // the batch is still counted before the batch is released.
     let replies = [];
     try {
       const body = await response.clone().json();
@@ -466,13 +472,15 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
     } catch {
       replies = [];
     }
-    for (const call of metered) {
+    const answered = metered.filter((call) => {
       const reply = replies.find((r) => isObject(r) && r.id === call.id);
-      const answered = reply && !reply.error && !(isObject(reply.result) && reply.result.isError === true);
-      if (!answered) continue;
-      if (!(await countLicensedCall(env.DB, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
-      noteUsage(env, ctx, day, call.tool, 'licensed');
+      return reply && !reply.error && !(isObject(reply.result) && reply.result.isError === true);
+    });
+    // One transaction for the whole batch: every answer counted, or none released.
+    if (!(await countLicensedCalls(env.LICENCES, day, licence.id, answered.map((c) => c.tool)))) {
+      return licenceUnavailable({ jsonRpc: true });
     }
+    for (const call of answered) noteUsage(env, ctx, day, call.tool, 'licensed');
     return response;
   }
 
@@ -493,13 +501,31 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
     return response;
   }
   // Every licensed answer is counted before it is released, or not released.
-  if (!(await countLicensedCall(env.DB, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
+  if (!(await countLicensedCall(env.LICENCES, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
   noteUsage(env, ctx, day, call.tool, 'licensed');
   return response;
 }
 
 function isRpcId(id) {
   return typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
+}
+
+/**
+ * Whether every message in a batch that expects an answer has a string or
+ * number id that no other message in the batch uses. A message with no id,
+ * or a null id, is a notification and gets no answer.
+ */
+function batchIdsDistinct(batch) {
+  const seen = new Set();
+  for (const m of batch) {
+    const id = isObject(m) ? m.id : undefined;
+    if (id === undefined || id === null) continue;
+    if (!isRpcId(id)) return false;
+    const key = `${typeof id}:${id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
 }
 
 /** The message with any x402 payment removed from params._meta. */

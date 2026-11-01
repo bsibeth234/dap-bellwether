@@ -41,9 +41,10 @@ class Statement {
 }
 
 export class TestD1 {
-  constructor() {
+  /** @param {string} [schemaFile] schema.sql for the bellwether database, licences.sql for dap-licences */
+  constructor(schemaFile = 'schema.sql') {
     this.db = new DatabaseSync(':memory:');
-    const schema = readFileSync(join(here, '..', 'schema.sql'), 'utf8');
+    const schema = readFileSync(join(here, '..', schemaFile), 'utf8');
     this.db.exec(schema);
   }
 
@@ -51,10 +52,18 @@ export class TestD1 {
     return new Statement(this.db, sql);
   }
 
+  /** Like D1, a batch is one transaction: if a statement fails, none of them is kept. */
   async batch(statements) {
     const out = [];
-    for (const statement of statements) {
-      out.push(await statement.run());
+    this.db.exec('BEGIN');
+    try {
+      for (const statement of statements) {
+        out.push(await statement.run());
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
     }
     return out;
   }

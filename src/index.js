@@ -13,6 +13,7 @@
 
 import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.js';
 import { handleApi } from './api.js';
+import { licenceStoreReady } from './licences.js';
 import { openApiDocument } from './openapi.js';
 import { canonicalPath } from './x402/path.ts';
 import { purgePaymentClaims } from './claims.js';
@@ -47,17 +48,6 @@ async function paymentsHealth(env) {
     status: 'degraded',
     reason: 'The payment tables are missing, so metered calls are answered free. Run npm run db:migrate.',
   };
-}
-
-/** Whether the licence tables exist. A key sent before they do answers 503. */
-async function licenceStoreReady(db) {
-  try {
-    await db.prepare('SELECT 1 FROM licences WHERE 0').all();
-    await db.prepare('SELECT 1 FROM licence_usage_daily WHERE 0').all();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export default {
@@ -110,7 +100,7 @@ export default {
           })),
           lastRun: run || null,
           payments: await paymentsHealth(env),
-          licences: { status: (await licenceStoreReady(env.DB)) ? 'ready' : 'missing' },
+          licences: { status: (await licenceStoreReady(env.LICENCES)) ? 'ready' : 'missing' },
         });
       } catch (err) {
         return Response.json(
