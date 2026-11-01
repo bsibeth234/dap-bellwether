@@ -1,7 +1,7 @@
 {
   "name": "dap-bellwether",
   "version": "1.0.0",
-  "description": "A free regulatory change feed for Canada, the US, the UK and the EU, delivered as an MCP connector.",
+  "description": "A regulatory change feed for Canada, the US, the UK and the EU, delivered as an MCP connector. Free for people, agents pay per call.",
   "type": "module",
   "private": true,
   "engines": {

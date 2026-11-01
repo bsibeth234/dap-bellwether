@@ -8,23 +8,37 @@
  * the gate release an answer as soon as the facilitator reports the transfer
  * sent (settlement_pending) rather than leaving a payer charged with no answer.
  *
- * Only a SHA-256 of the gate's claim key is stored, with its expiry. The key
- * names the network, the asset, the payer's wallet and the authorization's
- * nonce; the hash keeps none of them readable, and nothing about the query.
+ * Only a keyed hash of the gate's claim key is stored, with its expiry. The
+ * claim key names the network, the asset, the payer's wallet and the
+ * authorization's nonce, all of which become public on chain once the transfer
+ * settles. A plain hash could be matched to that transfer by anyone holding
+ * the table; a keyed one cannot without the service's key. Nothing about the
+ * query is in it.
  */
 
-async function sha256hex(text) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const keys = new Map();
+
+async function keyedHash(secret, text) {
+  let key = keys.get(secret);
+  if (!key) {
+    key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
+      'sign',
+    ]);
+    keys.clear();
+    keys.set(secret, key);
+  }
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`claim|${text}`));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
  * A replay guard for the vendored gate (src/x402/replay.ts), kept in D1.
  *
  * @param {() => object} getDb  returns the D1 binding
+ * @param {string} secret       the service's hashing key
  * @param {() => number} now    epoch milliseconds
  */
-export function d1ReplayGuard(getDb, now = Date.now) {
+export function d1ReplayGuard(getDb, secret, now = Date.now) {
   return {
     async claim(key, expiresAt) {
       const row = await getDb()
@@ -33,15 +47,23 @@ export function d1ReplayGuard(getDb, now = Date.now) {
             'ON CONFLICT (claim) DO UPDATE SET expires_at = excluded.expires_at ' +
             'WHERE payment_claims.expires_at <= ? RETURNING claim'
         )
-        .bind(await sha256hex(key), Math.floor(expiresAt), Math.floor(now()))
+        .bind(await keyedHash(secret, key), Math.floor(expiresAt), Math.floor(now()))
         .first();
       return row !== null;
     },
+    // A release that fails leaves the claim to lapse on its own, within about
+    // an hour (payments.js caps how long a payment may stay valid). It never
+    // throws: the gate's own answer, such as the settlement retry advice, must
+    // reach the caller unchanged.
     async release(key) {
-      await getDb()
-        .prepare('DELETE FROM payment_claims WHERE claim = ?')
-        .bind(await sha256hex(key))
-        .run();
+      try {
+        await getDb()
+          .prepare('DELETE FROM payment_claims WHERE claim = ?')
+          .bind(await keyedHash(secret, key))
+          .run();
+      } catch (err) {
+        console.error(`Bellwether payment claim release failed: ${err && err.message ? err.message : String(err)}`);
+      }
     },
   };
 }

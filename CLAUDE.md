@@ -1,7 +1,8 @@
 # DAP Bellwether
 
-A free, public, read-only MCP connector serving regulatory publications from
-financial regulators in Canada, the US, the UK and the EU. A cron job ingests
+A public, read-only MCP connector serving regulatory publications from
+financial regulators in Canada, the US, the UK and the EU. Free for people,
+agents pay per call (positioning set by Brendan, 1 November 2026). A cron job ingests
 feeds into Cloudflare D1 and the MCP tools read from D1. Read `README.md` for
 what it does.
 
@@ -23,7 +24,7 @@ what it does.
 | Signing key | `~/.config/mcp-publisher/dap-solutions-key.pem`, mode 600, outside the repo, not recoverable, also held in a password manager |
 | Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
 | Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
-| Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per caller per UTC day to the three data tools, then $0.02 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on or misconfigured. README, "The paid tier", has the switch-on steps. |
+| Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per address per UTC day to the three data tools, then $0.01 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on or misconfigured. README, "The paid tier", has the switch-on steps. |
 
 ## The corrected endpoints
 

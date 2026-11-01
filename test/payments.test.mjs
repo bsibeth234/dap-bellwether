@@ -211,7 +211,8 @@ test('with the paid tier off, the instructions, /health and the page all say fre
 
   const page = await (await worker.fetch(new Request('https://bellwether.dap.solutions/'), env, {})).text();
   assert.match(page, /<h2>Price<\/h2>\s*<p>Free\. Every tool, every call\. The paid tier is off\.<\/p>/);
-  assert.doesNotMatch(page, /Each caller gets|calls a day to the three data tools/);
+  assert.doesNotMatch(page, /calls a day to the three data tools/);
+  assert.doesNotMatch(page, /<p class="lede">[^<]*Agents pay per call/, 'no price claim while the tier is off');
 });
 
 test('a usage count that fails never touches the answer', async () => {
@@ -270,13 +271,13 @@ test('the allowance is free, then a metered call answers with the price', async 
   const required = json.result.structuredContent;
   assert.equal(required.x402Version, 2);
   assert.equal(required.accepts.length, 1);
-  assert.equal(required.accepts[0].amount, '20000', 'two cents in USDC, six decimals');
+  assert.equal(required.accepts[0].amount, '10000', 'one cent in USDC, six decimals');
   assert.equal(required.accepts[0].network, 'eip155:84532');
   assert.equal(required.accepts[0].payTo.toLowerCase(), PAY_TO);
   assert.equal(required.resource.serviceName, 'DAP Bellwether');
   assert.deepEqual(JSON.parse(json.result.content[0].text), required, 'the x402 body comes first and whole');
   assert.match(json.result.content[1].text, /free allowance of 2 calls a day/);
-  assert.match(json.result.content[1].text, /\$0\.02 in USDC on Base Sepolia/);
+  assert.match(json.result.content[1].text, /\$0\.01 in USDC on Base Sepolia/);
   assert.match(json.result.content[1].text, /resets at 2026-11-02T00:00:00\.000Z/);
   assert.doesNotMatch(json.result.content[1].text, /[\u2013\u2014]/);
 
@@ -327,7 +328,7 @@ test('the instructions tell an agent the allowance and the price before it meets
   const text = json.result.instructions;
   assert.match(text, /not legal or compliance advice/);
   assert.match(text, /search_regulatory_changes, recent_regulatory_changes and get_regulatory_change are free for 2 calls per caller each UTC day/);
-  assert.match(text, /\$0\.02 in USDC on Base Sepolia, paid per call with x402/);
+  assert.match(text, /\$0\.01 in USDC on Base Sepolia, paid per call with x402/);
   assert.match(text, /list_coverage is always free/);
   assert.doesNotMatch(text, /[\u2013\u2014]/);
 });
@@ -392,7 +393,7 @@ test('a paid call is verified, answered, settled, then released with the receipt
   assert.equal(facilitator.seen.settle.length, 1);
   const sent = JSON.stringify(facilitator.seen.verify[0].payload);
   assert.ok(!sent.includes('capital'), 'the facilitator never sees the query');
-  assert.equal(facilitator.seen.settle[0].requirements.amount, '20000');
+  assert.equal(facilitator.seen.settle[0].requirements.amount, '10000');
 
   assert.deepEqual(await usage(db), [
     'search_regulatory_changes allowance 2',
@@ -522,14 +523,17 @@ test('/health and the page state the price while the tier is on, and nothing sec
   const health = await (await worker.fetch(new Request('https://bellwether.dap.solutions/health'), env, {})).json();
   assert.equal(health.payments.status, 'on');
   assert.equal(health.payments.freeCallsPerDay, 2);
-  assert.equal(health.payments.price, '$0.02');
+  assert.equal(health.payments.price, '$0.01');
   assert.equal(health.payments.network, 'eip155:84532');
   const text = JSON.stringify(health);
   assert.ok(!text.includes(PAY_TO) && !text.includes(ALLOWANCE_KEY), '/health shows no wallet and no key');
 
   const page = await (await worker.fetch(new Request('https://bellwether.dap.solutions/'), env, {})).text();
-  assert.match(page, /Each caller gets 2 calls a day to the three data tools/);
-  assert.match(page, /\$0\.02 in USDC on Base Sepolia/);
+  assert.match(page, /Free for people: 2 calls a day from any one address to the three data tools/);
+  assert.match(page, /Agents pay per call past that: \$0\.01 in USDC on Base Sepolia/);
+  assert.match(page, /<title>DAP Bellwether, a regulatory change feed<\/title>/);
+  assert.match(page, /<p class="lede">[^<]*Free for people\. Agents pay per call\./);
+  assert.doesNotMatch(page, /a free regulatory change feed/i, 'no free claim while agents pay');
   assert.ok(page.includes('<a href="https://dap.solutions/solutions/systems/agent-payments/">DAP Agent Payments</a>'));
   assert.ok(!page.includes(PAY_TO));
 });
@@ -665,6 +669,76 @@ test('with the tier off, a large body is answered as before', async () => {
   const big = JSON.stringify(toolCall('search_regulatory_changes', { query: 'capital', since: '2000-01-01' + ' '.repeat(MAX_BODY_BYTES) }));
   const { response } = await send({ DB: db }, null, { raw: big });
   assert.equal(response.status, 200);
+});
+
+test('a caller asked to pay gives its count back, so it cannot lock out its /48', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const search = () => toolCall('search_regulatory_changes', { query: 'capital' });
+  for (let i = 0; i < 25; i += 1) await send(env, search(), { ip: '2001:db8:99:1::5' });
+  const neighbour = await send(env, search(), { ip: '2001:db8:99:2::7' });
+  assert.equal(neighbour.json.result.isError, undefined, 'a neighbouring /64 still has its allowance');
+  const { results } = await db.prepare('SELECT calls FROM allowance_counts ORDER BY calls DESC').all();
+  assert.deepEqual(results.map((r) => r.calls), [3, 2, 1], 'only answered calls are counted');
+});
+
+test('a payment that stays valid longer than an hour is refused before anything runs', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+  const payment = paymentFor(challenge, { nonce: '99' });
+  payment['x402/payment'].payload.authorization.validBefore = String(Math.floor(NOW / 1000) + 10 * 86400);
+
+  const facilitator = fakeFacilitator();
+  const { json } = await send(env, toolCall('search_regulatory_changes', { query: 'capital' }, payment), { facilitator });
+  assert.equal(json.result.isError, true);
+  assert.equal(json.result.structuredContent.error, 'invalid_exact_evm_payload_authorization_valid_before');
+  assert.deepEqual(JSON.parse(json.result.content[0].text), json.result.structuredContent);
+  assert.equal(facilitator.seen.verify.length, 0);
+  assert.ok(!JSON.stringify(json).includes('capital adequacy'));
+});
+
+test('a claim is a keyed hash, which cannot be matched to the transfer without the key', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+  const payment = paymentFor(challenge, { nonce: 'aa' });
+  await send(env, toolCall('search_regulatory_changes', { query: 'capital' }, payment));
+
+  const auth = payment['x402/payment'].payload.authorization;
+  const accepted = payment['x402/payment'].accepted;
+  const plain = createHash('sha256')
+    .update(`${accepted.network}|${accepted.asset}|${auth.from}|${auth.nonce}`.toLowerCase())
+    .digest('hex');
+  const { results } = await db.prepare('SELECT claim FROM payment_claims').all();
+  assert.equal(results.length, 1);
+  assert.notEqual(results[0].claim, plain, 'not a plain hash of what the chain shows');
+});
+
+test('a claim that cannot be released leaves the gate its own answer', async () => {
+  // The settlement times out, then the release fails: the caller must still
+  // get the gate's advice to resend the same payment, not a different error.
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (let i = 0; i < 2; i += 1) await send(env, toolCall('search_regulatory_changes', { query: 'capital' }));
+  const challenge = (await send(env, toolCall('search_regulatory_changes', { query: 'capital' }))).json;
+
+  const { FacilitatorError } = await import('../src/x402/facilitator.ts');
+  const facilitator = fakeFacilitator();
+  facilitator.settle = async () => {
+    db.db.exec('DROP TABLE payment_claims');
+    throw new FacilitatorError('settle', 'timed out');
+  };
+  const { response, json } = await send(
+    env,
+    toolCall('search_regulatory_changes', { query: 'capital' }, paymentFor(challenge, { nonce: 'bb' })),
+    { facilitator }
+  );
+  assert.equal(response.status, 503);
+  assert.match(json.error.message, /Send the same call with the same signed payment/);
+  assert.ok(!JSON.stringify(json).includes('capital adequacy'));
 });
 
 // ---------------------------------------------------------------- housekeeping

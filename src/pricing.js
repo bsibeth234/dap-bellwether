@@ -2,7 +2,7 @@
  * Pricing: whether the paid tier is on, and the gate that charges for it.
  *
  * The three data tools are free for a daily allowance per caller. Past the
- * allowance each call costs two cents in USDC, paid per call with x402 through
+ * allowance each call costs one cent in USDC, paid per call with x402 through
  * DAP Agent Payments. list_coverage is always free, and so are initialize,
  * tools/list and every other protocol message.
  *
@@ -33,7 +33,7 @@ export const METERED_TOOLS = Object.freeze([
 ]);
 
 /** Price per call past the allowance, in US dollars, settled in USDC. */
-export const PRICE = '$0.02';
+export const PRICE = '$0.01';
 
 /** Calls per caller per UTC day before a metered tool asks for payment. */
 export const DEFAULT_FREE_CALLS_PER_DAY = 50;
@@ -159,7 +159,7 @@ function build(env, overrides) {
     tags: [...SERVICE.tags],
     routes: [],
     mcp: { path: '/mcp', tools: meteredTools() },
-    replayGuard: d1ReplayGuard(() => env.DB, now),
+    replayGuard: d1ReplayGuard(() => env.DB, allowanceKey, now),
     acceptPending: true,
   };
   let gate;
@@ -221,6 +221,6 @@ export function pricingInstructions(pricing) {
     `${METERED_TOOLS.join(', ').replace(/, ([^,]*)$/, ' and $1')} are free for ${pricing.freeCallsPerDay} calls per caller each UTC day.`,
     `After that each call costs ${pricing.price} in USDC on ${pricing.network.label}, paid per call with x402.`,
     'A client that cannot pay gets a payment required result until the allowance resets at 00:00 UTC.',
-    'A call that fails is never charged and never counted. list_coverage is always free.',
+    'A call that fails is never charged and does not count against the allowance. list_coverage is always free.',
   ].join(' ');
 }

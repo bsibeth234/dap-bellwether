@@ -1,7 +1,7 @@
 {
   "name": "DAP Bellwether",
   "short_name": "Bellwether",
-  "description": "A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union.",
+  "description": "A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union. Free for people, agents pay per call.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -15,10 +15,28 @@
 
 import { SOURCES, JURISDICTIONS, enabledSources } from './sources.js';
 
-/** One sentence, shared by the meta description and both card previews, so a
- *  link preview and a search result never describe the service differently. */
-const DESCRIPTION =
-  'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
+/** What the service is, in one line, for the title and both card previews.
+ *  Positioning set by Brendan Sibeth, 1 November 2026: free for people,
+ *  agents pay per call. Said only while the paid tier is on, because the page
+ *  says only what the connector does. */
+const TAGLINE = 'Free for people. Agents pay per call.';
+
+/** The meta description, shared by both card previews, so a link preview and
+ *  a search result never describe the service differently. */
+function describe(pricing) {
+  return pricing && pricing.status === 'on'
+    ? `Regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. ${TAGLINE}`
+    : 'A free, public MCP connector serving regulatory publications from financial regulators in Canada, the United States, the United Kingdom and the European Union. No account, no key.';
+}
+
+function titleFor(pricing) {
+  return pricing && pricing.status === 'on'
+    ? 'DAP Bellwether, a regulatory change feed'
+    : 'DAP Bellwether, a free regulatory change feed';
+}
+
+/** Describes the social card image, which is a file and the same in every state. */
+const CARD_ALT = `DAP Bellwether. ${TAGLINE} bellwether.dap.solutions`;
 
 /**
  * The one address this service should be indexed under.
@@ -65,7 +83,7 @@ export const PRIVACY = {
     ],
     [
       'Payment claims',
-      'For each paid call, a one-way hash of its payment authorization is kept until the authorization expires, at most a day, so one payment cannot buy two answers. It holds no query, and the wallet and nonce inside it cannot be read back.',
+      'For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service\'s key it cannot be matched to the transfer.',
     ],
     [
       'Accounts',
@@ -152,8 +170,8 @@ function priceMarkup(pricing) {
   if (!pricing || pricing.status !== 'on') {
     return '<p>Free. Every tool, every call. The paid tier is off.</p>';
   }
-  return `<p>Free for everyday use. Each caller gets ${esc(pricing.freeCallsPerDay)} calls a day to the three data tools, counted per network address and reset at 00:00 UTC. list_coverage is always free.</p>
-<p>Past that, each call costs ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, paid per call with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. An agent that cannot pay gets a payment required result until the allowance resets. A call that fails is never charged and never counted.</p>`;
+  return `<p>Free for people: ${esc(pricing.freeCallsPerDay)} calls a day from any one address to the three data tools, reset at 00:00 UTC. list_coverage is always free.</p>
+<p>Agents pay per call past that: ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. A call that fails is never charged and does not count.</p>`;
 }
 
 function privacyMarkup() {
@@ -304,32 +322,38 @@ export function renderLanding(origin, pricing = { status: 'off' }) {
   const mcpUrl = `${origin}/mcp`;
   const feedCount = enabledSources().length;
   const jurisdictionCount = new Set(enabledSources().map((s) => s.jurisdiction)).size;
+  const title = esc(titleFor(pricing));
+  const description = esc(describe(pricing));
+  const lede =
+    pricing && pricing.status === 'on'
+      ? `A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. ${TAGLINE} No account, no key, no seat licence.`
+      : 'A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. No account, no key, no seat licence.';
 
   return `<!doctype html>
 <html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DAP Bellwether, a free regulatory change feed</title>
-<meta name="description" content="${esc(DESCRIPTION)}">
+<title>${title}</title>
+<meta name="description" content="${description}">
 <meta name="theme-color" content="#15171A">
 <link rel="canonical" href="${esc(CANONICAL_URL)}">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DAP Bellwether">
-<meta property="og:title" content="DAP Bellwether, a free regulatory change feed">
-<meta property="og:description" content="${esc(DESCRIPTION)}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
 <meta property="og:url" content="${esc(CANONICAL_URL)}">
 <meta property="og:image" content="${esc(origin)}/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="DAP Bellwether, a free regulatory change feed, at bellwether.dap.solutions">
+<meta property="og:image:alt" content="${esc(CARD_ALT)}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="DAP Bellwether, a free regulatory change feed">
-<meta name="twitter:description" content="${esc(DESCRIPTION)}">
+<meta name="twitter:title" content="${title}">
+<meta name="twitter:description" content="${description}">
 <meta name="twitter:image" content="${esc(origin)}/og.png">
-<meta name="twitter:image:alt" content="DAP Bellwether, a free regulatory change feed, at bellwether.dap.solutions">
+<meta name="twitter:image:alt" content="${esc(CARD_ALT)}">
 
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
@@ -434,7 +458,7 @@ footer p{max-width:36rem}
 <header>
   <p class="eyebrow">Dartmouth Advisory Partners</p>
   <h1>DAP Bellwether</h1>
-  <p class="lede">A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. No account, no key, no seat licence.</p>
+  <p class="lede">${esc(lede)}</p>
 </header>
 
 <h2>What it is</h2>

@@ -5,7 +5,7 @@
  *   a data tool, within the allowance       answered free, one more on the caller's count
  *   a data tool, past the allowance         a payment required result, with the price
  *   a data tool, with a payment attached    verified, answered, settled, then released
- *   a call that fails                        never charged, never counted
+ *   a call that fails                        never charged, its count given back
  *
  * With the paid tier off, every call is free and nothing is counted per caller.
  * In both states a daily total per tool, with no caller attached, is kept so
@@ -363,11 +363,19 @@ export async function handleMcp(request, env, ctx, overrides) {
 
   // A caller who sends a payment has chosen to pay, allowance or not.
   if (hasPayment(message)) {
+    // A payment that stays valid longer than the claim on it can be held is
+    // refused before anything runs, so no claim lapses while its payment could
+    // still be presented again.
+    if (outlivesClaim(message, now())) {
+      noteUsage(env, ctx, day, call.tool, 'challenged');
+      return withError(await gatedWithoutPayment(request, message, pricing, env), VALID_BEFORE_ERROR);
+    }
     let response;
     try {
       response = await gated();
     } catch (err) {
-      // The claim on the payment could not be kept. Nothing ran and nothing was charged.
+      // Only the claim can throw here (claims.js swallows a failed release),
+      // and it is taken before verification: nothing ran and nothing was charged.
       console.error(`Bellwether payment claim failed: ${err && err.message ? err.message : String(err)}`);
       return rpcError(message.id, -32603, 'Payment service unavailable. Retry shortly.', 503);
     }
@@ -390,15 +398,18 @@ export async function handleMcp(request, env, ctx, overrides) {
     return forward();
   }
 
+  // Counts hold answered calls only. A call that fails, and a call that is
+  // asked to pay, gives its count back before the reply goes out, so a caller
+  // looping on payment required can never use up its neighbours' allowance.
+  const giveBack = () =>
+    refundCalls(env.DB, day, hashes).catch((err) => {
+      console.error(`Bellwether allowance refund failed: ${err && err.message ? err.message : String(err)}`);
+    });
+
   if (scopes.every((scope, i) => (counts.get(hashes[i]) || 0) <= scope.limit)) {
     const response = await forward();
     if (await failed(response)) {
-      // A call that fails does not use up the allowance.
-      const job = refundCalls(env.DB, day, hashes).catch((err) => {
-        console.error(`Bellwether allowance refund failed: ${err && err.message ? err.message : String(err)}`);
-      });
-      if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
-      else await job;
+      await giveBack();
       noteUsage(env, ctx, day, call.tool, 'not_charged');
     } else {
       noteUsage(env, ctx, day, call.tool, 'allowance');
@@ -406,8 +417,56 @@ export async function handleMcp(request, env, ctx, overrides) {
     return response;
   }
 
+  await giveBack();
   noteUsage(env, ctx, day, call.tool, 'challenged');
   return explainAllowance(await gated(), pricing, now());
+}
+
+/**
+ * The longest a payment authorization may stay valid. The gate offers 60
+ * seconds; an hour leaves room for clock skew and slow clients, and sits well
+ * inside the day a claim can be held.
+ */
+export const MAX_PAYMENT_VALIDITY_SECONDS = 60 * 60;
+const VALID_BEFORE_ERROR = 'invalid_exact_evm_payload_authorization_valid_before';
+
+/** Whether a payment's validBefore reaches past what a claim can cover. */
+function outlivesClaim(message, nowMs) {
+  const payment = message.params._meta[PAYMENT_META];
+  const validBefore =
+    isObject(payment) && isObject(payment.payload) && isObject(payment.payload.authorization)
+      ? payment.payload.authorization.validBefore
+      : undefined;
+  if (typeof validBefore !== 'string' || !/^\d{1,20}$/.test(validBefore)) return false; // the gate refuses it
+  return Number(validBefore) > Math.floor(nowMs / 1000) + MAX_PAYMENT_VALIDITY_SECONDS;
+}
+
+/** The gate's price for this call, as if no payment had been sent. */
+function gatedWithoutPayment(request, message, pricing, env) {
+  const meta = { ...message.params._meta };
+  delete meta[PAYMENT_META];
+  const { _meta: _dropped, ...params } = message.params;
+  const bare = { ...message, params: Object.keys(meta).length ? { ...params, _meta: meta } : params };
+  return pricing.gate.handle(withBody(request, JSON.stringify(bare)), (rebuilt) => handleMcpRequest(rebuilt, env));
+}
+
+/** A payment required result with the reason a payment was refused. */
+async function withError(response, code) {
+  let body;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return response;
+  }
+  const result = body && body.result;
+  if (!isObject(result) || !isObject(result.structuredContent)) return response;
+  result.structuredContent.error = code;
+  if (Array.isArray(result.content) && result.content[0] && result.content[0].type === 'text') {
+    result.content[0].text = JSON.stringify(result.structuredContent);
+  }
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return new Response(JSON.stringify(body), { status: response.status, headers });
 }
 
 /** Whether the server's answer is an error: a JSON-RPC error or a tool result marked isError. */

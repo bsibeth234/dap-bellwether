@@ -1,8 +1,8 @@
 # DAP Bellwether
 
-A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector.
+A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector.
 
-No account. No key. No seat licence. Paste a URL and it is there.
+Free for people. Agents pay per call. No account, no key, no seat licence.
 
 Built and maintained by [Dartmouth Advisory Partners](https://dap.solutions), Toronto.
 
@@ -44,9 +44,9 @@ All four are read-only. There is no write surface.
 
 ### Price
 
-Free for everyday use. While the paid tier is on, each caller gets 50 calls a day to the three data tools, counted per network address and reset at 00:00 UTC. An IPv6 caller is counted per /64, and every /64 in a /48 also shares a ceiling of ten allowances, so a larger block cannot be rotated into free calls. `list_coverage`, `initialize` and `tools/list` are always free.
+Free for people: 50 calls a day from any one address to the three data tools, reset at 00:00 UTC. An IPv6 caller is counted per /64, and every /64 in a /48 also shares a ceiling of ten allowances, so a larger block cannot be rotated into free calls. Only answered calls count. `list_coverage`, `initialize` and `tools/list` are always free.
 
-Past that, each call costs $0.02 in USDC on Base, paid per call with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and a plain sentence saying when the allowance resets. A call that fails is never charged and never counted. An answer is released only once its payment has been sent to the chain, and one payment buys one answer however many Worker instances it reaches.
+Agents pay per call past that: $0.01 in USDC on Base, with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and when the allowance resets. A call that fails is never charged and does not count. An answer is released only once its payment has been sent to the chain, one payment buys one answer however many Worker instances it reaches, and a payment may stay valid for at most an hour.
 
 The paid tier is off until it is switched on (see Deploying). While it is off, every call is free and nothing is counted per caller. The landing page, `/health` and the MCP `instructions` all say which state is live.
 
@@ -90,7 +90,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 - **No auth.** The entire surface is public regulatory material. There is nothing here to protect and nothing a user can damage, and skipping OAuth removes the largest source of directory review friction.
 - **Metering by address, not by account.** An account would mean a sign in, which MCP hosts handle differently and many agents cannot do at all. A daily count per network address keeps the connector keyless, and x402 lets an agent pay per call without signing up for anything.
-- **D1 rather than Postgres.** The store lives inside the same Worker with no external credentials and no egress. For a free public read-only surface, fewer moving parts wins.
+- **D1 rather than Postgres.** The store lives inside the same Worker with no external credentials and no egress. For a public read-only surface, fewer moving parts wins.
 - **The MCP layer is written directly against JSON-RPC.** The reference SDK's HTTP transport expects a Node request and response pair, and the Workers path around it wants Durable Objects for session state. A read-only server has no session state worth keeping, so the stateless JSON mode the specification already permits is simpler and has less to break.
 - **Keyword search is `LIKE`, not FTS5.** At the volumes these feeds produce, `LIKE` with the jurisdiction and date indexes is comfortably fast, and it avoids keeping an FTS index in sync through revisions. Worth revisiting if the corpus grows an order of magnitude.
 
@@ -98,7 +98,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 90 tests, no network required (Node 22.7 or later)
+npm test                     # 104 tests, no network required (Node 22.7 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -176,7 +176,7 @@ This section is kept word for word in step with the privacy section rendered on 
 - **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.
 - **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.
 - **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
-- **Payment claims.** For each paid call, a one-way hash of its payment authorization is kept until the authorization expires, at most a day, so one payment cannot buy two answers. It holds no query, and the wallet and nonce inside it cannot be read back.
+- **Payment claims.** For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service's key it cannot be matched to the transfer.
 - **Accounts.** There are none. The service has no sign in, so it holds no credentials or email addresses.
 - **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
 - **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
