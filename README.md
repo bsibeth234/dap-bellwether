@@ -2,7 +2,7 @@
 
 A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector.
 
-Free for people. Agents pay per call. No account, no key, no seat licence.
+Free for people. Agents pay per call. Institutions can take a licence, billed by invoice.
 
 Built and maintained by [Dartmouth Advisory Partners](https://dap.solutions), Toronto.
 
@@ -49,6 +49,23 @@ Free for people: 50 calls a day from any one address to the three data tools, re
 Agents pay per call past that: $0.01 in USDC on Base, with [x402](https://x402.org) through [DAP Agent Payments](https://dap.solutions/solutions/systems/agent-payments/). An agent that cannot pay gets a payment required result, with the price and when the allowance resets. A call that fails is never charged and does not count. An answer is released only once its payment has been sent to the chain, one payment buys one answer however many Worker instances it reaches, and a payment may stay valid for at most an hour.
 
 The paid tier is off until it is switched on (see Deploying). While it is off, every call is free and nothing is counted per caller. The landing page, `/health` and the MCP `instructions` all say which state is live.
+
+### JSON API
+
+The same records as JSON over HTTPS GET, for agents and systems that do not speak MCP. Described in OpenAPI 3.1 at `https://bellwether.dap.solutions/openapi.json`.
+
+| Endpoint | Price |
+| --- | --- |
+| `GET /api/search?query=&jurisdiction=&regulator=&category=&since=&until=&limit=` | $0.01 from the first call |
+| `GET /api/recent?jurisdiction=&days=&limit=` | $0.01 from the first call |
+| `GET /api/changes/{id}` | $0.01 from the first call |
+| `GET /api/coverage` | Free |
+
+There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. A date the regulator did not publish is `null`, never our collection time.
+
+### Institutional licences
+
+Institutions can take a licence instead of paying per call: one agreement, one invoice, and a key for their agents, with no crypto wallet. The key (`dapk_` and 43 characters) is sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` on `/mcp` and `/api`. A licensed call skips the allowance and x402, and each answered call to a data tool or data endpoint adds one to the licence's daily count, which is what the invoice reads. An unknown or revoked key answers 401 rather than falling back to the free or paid rails, so a licensee finds out at once. Any other `Authorization` header is ignored.
 
 ## Coverage
 
@@ -98,7 +115,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 104 tests, no network required (Node 22.5 or later)
+npm test                     # 129 tests, no network required (Node 22.5 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -155,6 +172,19 @@ Usage, with no caller attached:
 npx wrangler d1 execute bellwether --remote --command "SELECT * FROM tool_usage_daily ORDER BY day DESC, calls DESC"
 ```
 
+### Issuing licences
+
+Run on the Mac signed in to Cloudflare, from the repo root. `npm run db:migrate` first adds the `licences` and `licence_usage_daily` tables (it is safe to run again).
+
+```bash
+node scripts/licence.mjs issue "Example Pension Plan" --note "Master licence 2026-11"   # prints the key once
+node scripts/licence.mjs list
+node scripts/licence.mjs usage 2026-11        # answered calls per licence and endpoint, for the invoice
+node scripts/licence.mjs revoke lic_1a2b3c4d  # the key answers 401 from then on; the record stays
+```
+
+The key is shown once and never stored, only its SHA-256 is. Give it to the licensee over a secure channel. If it is lost, issue a new one and revoke the old. Revoking never deletes, so past usage can still be billed. Add `--local` to work on the local database.
+
 ### Verifying it works
 
 ```bash
@@ -175,18 +205,19 @@ Add an entry to `SOURCES` in `src/sources.js`, run `npm run verify:sources`, and
 
 ## Privacy policy
 
-The connector keeps no accounts and no email addresses. This page counts visits without cookies or identifiers.
+The connector keeps no accounts for people and no email addresses. This page counts visits without cookies or identifiers.
 
 This section is kept word for word in step with the privacy section rendered on the landing page, from `PRIVACY` in `src/landing.js`. A test fails if they differ. Change one and change the other.
 
-- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.
-- **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.
+- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.
+- **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here. A licensed call carries the institution's key, which is checked against a stored hash and not stored itself.
 - **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
 - **Payment claims.** For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service's key it cannot be matched to the transfer.
-- **Accounts.** There are none. The service has no sign in, so it holds no credentials or email addresses.
+- **Licences.** An institution that takes a licence has one record: its name as written on the licence, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.
+- **Accounts.** There are none for people. The service has no sign in, so it holds no passwords or email addresses. A licence is not an account: it holds only what the Licences row describes.
 - **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
 - **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
-- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.
+- **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Licence records and their daily counts are kept for invoicing and audit. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.
 - **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. The Worker keeps no request logs: it logs errors and the collection summary, never a caller's address or query. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.
 - **Contact.** bsibeth@dap.solutions
 

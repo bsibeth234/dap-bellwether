@@ -25,6 +25,7 @@ what it does.
 | Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
 | Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
 | Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per address per UTC day to the three data tools, then $0.01 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on, misconfigured or degraded. README, "The paid tier", has the switch-on steps. |
+| JSON API and licences | `src/api.js`, `src/licences.js`, `src/openapi.js`, `scripts/licence.mjs`. `GET /api/search`, `/api/recent`, `/api/changes/{id}` priced from the first call ($0.01, x402, Bazaar metadata on search and recent); `/api/coverage` free; OpenAPI at `/openapi.json`. Licence keys (`dapk_`) on `/mcp` and `/api` skip the allowance and x402 and are counted per licence per day in `licence_usage_daily` for invoicing. Needs `npm run db:migrate` for the `licences` tables; `/health` reports `licences.status`. |
 | Paid tier switched on | 2026-11-01 about 06:18 UTC, by Brendan running `scripts/switch-on.sh` on his Mac: CDP key checked with the facilitator, tables added, four secrets set, deploy version `61c5dd42-5ff9-4edd-af41-6eeeeec44bc1`, `/health` on, then from his Mac 50 of 50 searches free and call 51 priced at 10000 atomic USDC on Base to `0xa590d98bbee97533bd7dfed19c0a89ffeeeb1384`. Checked again from Chrome: `/health` on with 10 of 10 feeds, and the Claude connector still answers a search free. Off again: `npx wrangler secret delete X402_PAY_TO`. |
 
 ## The corrected endpoints
@@ -121,6 +122,17 @@ Two failures were ours rather than the regulators':
   160.79.104.0/21.** Measured 2026-10-25 to 2026-11-01: 681 `Claude-User`
   requests from 59 addresses, at most 40 per address in the week, so a per
   address allowance does not pool Claude users into one count.
+
+- **The API is priced by the gate's own price list.** `src/api.js` routes on
+  the canonical path and refuses (500) any priced endpoint the gate would not
+  price, so no spelling of a path can be answered free. Bad parameters are
+  refused with 400 before any payment is asked for.
+- **A DAP key that is wrong answers 401, it never falls back.** Only tokens
+  starting `dapk_` are treated as licence attempts; any other Authorization
+  header is ignored and the free or paid rails apply as before.
+- **README headings: nothing may contain `## Licence` before the privacy
+  section.** The privacy word-for-word test slices the README from
+  `## Privacy policy` to the first `## Licence`.
 
 ## Conventions
 

@@ -88,15 +88,15 @@ export const SETUP_STEPS = [
  */
 export const PRIVACY = {
   intro:
-    'The connector keeps no accounts and no email addresses. This page counts visits without cookies or identifiers.',
+    'The connector keeps no accounts for people and no email addresses. This page counts visits without cookies or identifiers.',
   rows: [
     [
       'What is stored',
-      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. Nothing else a user sends is written to the database.',
+      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.',
     ],
     [
       'What is received',
-      "Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here.",
+      "Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here. A licensed call carries the institution's key, which is checked against a stored hash and not stored itself.",
     ],
     [
       'Allowance counts',
@@ -107,8 +107,12 @@ export const PRIVACY = {
       'For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service\'s key it cannot be matched to the transfer.',
     ],
     [
+      'Licences',
+      'An institution that takes a licence has one record: its name as written on the licence, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.',
+    ],
+    [
       'Accounts',
-      'There are none. The service has no sign in, so it holds no credentials or email addresses.',
+      'There are none for people. The service has no sign in, so it holds no passwords or email addresses. A licence is not an account: it holds only what the Licences row describes.',
     ],
     [
       'Analytics',
@@ -120,7 +124,7 @@ export const PRIVACY = {
     ],
     [
       'Retention',
-      "Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.",
+      "Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Licence records and their daily counts are kept for invoicing and audit. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.",
     ],
     [
       'Infrastructure',
@@ -188,11 +192,14 @@ function coverageMarkup() {
  * @param {{ status: string, freeCallsPerDay?: number, price?: string, networkLabel?: string }} pricing
  */
 function priceMarkup(pricing) {
+  const licence = `<p id="licence">Institutions can take a licence instead: one agreement, one invoice, and a key for your agents, with no crypto wallet. Write to <a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a>.</p>`;
   if (!pricing || pricing.status !== 'on') {
-    return '<p>Free. Every tool, every call. The paid tier is off.</p>';
+    return `<p>Free. Every tool, every call, including the JSON API. The paid tier is off.</p>\n${licence}`;
   }
   return `<p>Free for people: ${esc(pricing.freeCallsPerDay)} calls a day from any one address to the three data tools, reset at 00:00 UTC. list_coverage is always free.</p>
-<p>Agents pay per call past that: ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. A call that fails is never charged and does not count.</p>`;
+<p>Agents pay per call past that: ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. A call that fails is never charged and does not count.</p>
+<p>Agents that call HTTP rather than MCP can use the JSON API at /api, at ${esc(pricing.price)} from the first call. It is described at <a href="/openapi.json">/openapi.json</a>.</p>
+${licence}`;
 }
 
 function privacyMarkup() {

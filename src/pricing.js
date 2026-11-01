@@ -74,6 +74,39 @@ function meteredTools() {
   );
 }
 
+/**
+ * The JSON API for agents. Priced from the first call: there is no free
+ * allowance here, because people use the connector and agents that call an API
+ * can pay. That is also what lets agent directories list it: they index an
+ * endpoint by calling it and expecting the price. /api/coverage is free.
+ */
+export const API_ENDPOINTS = Object.freeze([
+  {
+    name: 'search',
+    path: '/api/search',
+    tool: 'search_regulatory_changes',
+    discovery: { input: { method: 'GET', queryParams: { query: 'capital', limit: '5' } }, output: { type: 'json' } },
+  },
+  {
+    name: 'recent',
+    path: '/api/recent',
+    tool: 'recent_regulatory_changes',
+    discovery: { input: { method: 'GET', queryParams: { days: '7', limit: '5' } }, output: { type: 'json' } },
+  },
+  { name: 'change', path: '/api/changes/*', tool: 'get_regulatory_change' },
+]);
+
+function apiRoutes() {
+  return API_ENDPOINTS.map((endpoint) => ({
+    path: endpoint.path,
+    methods: ['GET'],
+    price: PRICE,
+    description: DESCRIPTIONS[endpoint.tool],
+    mimeType: 'application/json',
+    ...(endpoint.discovery ? { discovery: endpoint.discovery } : {}),
+  }));
+}
+
 function readFreeCalls(raw) {
   if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_FREE_CALLS_PER_DAY;
   const text = String(raw).trim();
@@ -157,8 +190,9 @@ function build(env, overrides) {
   const options = {
     ...SERVICE,
     tags: [...SERVICE.tags],
-    routes: [],
+    routes: apiRoutes(),
     mcp: { path: '/mcp', tools: meteredTools() },
+    docsUrl: 'https://bellwether.dap.solutions/openapi.json',
     replayGuard: d1ReplayGuard(() => env.DB, allowanceKey, now),
     acceptPending: true,
   };

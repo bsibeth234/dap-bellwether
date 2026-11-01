@@ -13,8 +13,8 @@
 import { JURISDICTIONS, SOURCES, enabledSources } from './sources.js';
 import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun } from './db.js';
 
-const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
-const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
+export const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
+export const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
 
 export const TOOLS = [
   {

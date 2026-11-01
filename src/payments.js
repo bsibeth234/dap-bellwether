@@ -6,6 +6,8 @@
  *   a data tool, past the allowance         a payment required result, with the price
  *   a data tool, with a payment attached    verified, answered, settled, then released
  *   a call that fails                        never charged, its count given back
+ *   any call with a DAP licence key          answered under the licence (licences.js):
+ *                                            no allowance, no x402, counted per licence
  *
  * With the paid tier off, every call is free and nothing is counted per caller.
  * In both states a daily total per tool, with no caller attached, is kept so
@@ -25,6 +27,7 @@
 import { handleMcpRequest, isAllowedOrigin } from './mcp.js';
 import { METERED_TOOLS, NETWORK_ALLOWANCE_MULTIPLE, pricingFor } from './pricing.js';
 import { TOOLS } from './tools.js';
+import { licenceRefused, licenceUnavailable, noteLicenceUsage, readLicence } from './licences.js';
 
 /** Largest request body read. MCP messages here are a few hundred bytes. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -314,10 +317,17 @@ export async function handleMcp(request, env, ctx, overrides) {
     return handleMcpRequest(request, env);
   }
 
+  // A DAP licence key decides the rail before anything else is read. Requests
+  // without one cost no lookup at all.
+  const licence = await readLicence(request, env);
+  if (licence.status === 'invalid') return licenceRefused({ jsonRpc: true });
+  if (licence.status === 'unavailable') return licenceUnavailable({ jsonRpc: true });
+
   const pricing = pricingFor(env, overrides);
   const on = pricing.status === 'on';
   const now = (overrides && overrides.now) || Date.now;
-  const text = await readCapped(request, on ? MAX_BODY_BYTES : Infinity);
+  const licensed = licence.status === 'valid';
+  const text = await readCapped(request, on || licensed ? MAX_BODY_BYTES : Infinity);
   if (text === null) return rpcError(null, -32600, 'Request too large', 413);
 
   let message;
@@ -330,6 +340,8 @@ export async function handleMcp(request, env, ctx, overrides) {
   }
   const forward = () => handleMcpRequest(withBody(request, JSON.stringify(message)), env);
   const day = utcDay(now());
+
+  if (licensed) return licensedCall(request, message, env, ctx, day, licence.licence);
 
   if (Array.isArray(message)) {
     const calls = message.map(classify);
@@ -420,6 +432,59 @@ export async function handleMcp(request, env, ctx, overrides) {
   await giveBack();
   noteUsage(env, ctx, day, call.tool, 'challenged');
   return explainAllowance(await gated(), pricing, now());
+}
+
+/**
+ * A call under a DAP licence. No allowance and no x402: an answered call to a
+ * data tool adds one to the licence's count for the day, which the invoice
+ * reads. A payment attached by mistake is removed unread, so nothing is
+ * charged twice and the tool never sees it. Batches follow the paid tier's
+ * rule, one data call per request, so every count matches one answer.
+ */
+async function licensedCall(request, message, env, ctx, day, licence) {
+  const send = (msg) => handleMcpRequest(withBody(request, JSON.stringify(msg)), env);
+
+  if (Array.isArray(message)) {
+    const calls = message.map(classify);
+    if (calls.some((c) => c.kind === 'metered' || c.kind === 'malformed')) {
+      return rpcError(null, -32600, `Send each call to ${METERED_TOOLS.join(', ')} as its own request, not in a batch.`, 400);
+    }
+    for (const c of calls) if (c.kind === 'free') noteUsage(env, ctx, day, c.tool, 'unmetered');
+    return send(message);
+  }
+
+  const call = classify(message);
+  if (call.kind === 'other') return send(message);
+  if (call.kind === 'malformed') return rpcError(isRpcId(message.id) ? message.id : null, -32600, 'Invalid tools/call request', 400);
+  if (call.kind === 'free') {
+    noteUsage(env, ctx, day, call.tool, 'unmetered');
+    return send(message);
+  }
+
+  const clean = withoutPayment(message);
+  // A notification gets no answer, so it is not counted.
+  if (clean.id === undefined || clean.id === null) return send(clean);
+  const response = await send(clean);
+  if (await failed(response)) {
+    noteUsage(env, ctx, day, call.tool, 'not_charged');
+  } else {
+    noteLicenceUsage(env, ctx, day, licence.id, call.tool);
+    noteUsage(env, ctx, day, call.tool, 'licensed');
+  }
+  return response;
+}
+
+function isRpcId(id) {
+  return typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
+}
+
+/** The message with any x402 payment removed from params._meta. */
+function withoutPayment(message) {
+  if (!hasPayment(message)) return message;
+  const meta = { ...message.params._meta };
+  delete meta[PAYMENT_META];
+  const { _meta: _dropped, ...params } = message.params;
+  return { ...message, params: Object.keys(meta).length ? { ...params, _meta: meta } : params };
 }
 
 /**

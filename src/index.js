@@ -2,7 +2,8 @@
  * DAP Bellwether, Worker entry point.
  *
  * Three jobs:
- *   fetch      serve the MCP endpoint, the landing page and its static assets
+ *   fetch      serve the MCP endpoint, the JSON API for agents, the landing
+ *              page and its static assets
  *   assets     icons, manifest and fonts, bundled because a Worker has no disk
  *   scheduled  run the ingest on a cron trigger
  *
@@ -11,6 +12,9 @@
  */
 
 import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.js';
+import { handleApi } from './api.js';
+import { openApiDocument } from './openapi.js';
+import { canonicalPath } from './x402/path.ts';
 import { purgePaymentClaims } from './claims.js';
 import { pricingFor, pricingSummary } from './pricing.js';
 import { runIngest } from './ingest.js';
@@ -45,12 +49,40 @@ async function paymentsHealth(env) {
   };
 }
 
+/** Whether the licence tables exist. A key sent before they do answers 503. */
+async function licenceStoreReady(db) {
+  try {
+    await db.prepare('SELECT 1 FROM licences WHERE 0').all();
+    await db.prepare('SELECT 1 FROM licence_usage_daily WHERE 0').all();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === '/mcp') {
       return handleMcp(request, env, ctx);
+    }
+
+    // Routed on the canonical path, the same one the gate prices, so every
+    // spelling of an API path reaches the API and its price.
+    const canonical = canonicalPath(url.pathname);
+    if (canonical === '/api' || (canonical && canonical.startsWith('/api/'))) {
+      return handleApi(request, env, ctx);
+    }
+
+    if (url.pathname === '/openapi.json') {
+      return new Response(JSON.stringify(openApiDocument(), null, 2), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
     }
 
     // Icons, manifest and fonts. Checked before the routes below so a static
@@ -78,6 +110,7 @@ export default {
           })),
           lastRun: run || null,
           payments: await paymentsHealth(env),
+          licences: { status: (await licenceStoreReady(env.DB)) ? 'ready' : 'missing' },
         });
       } catch (err) {
         return Response.json(
