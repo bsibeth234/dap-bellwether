@@ -24,7 +24,8 @@ what it does.
 | Signing key | `~/.config/mcp-publisher/dap-solutions-key.pem`, mode 600, outside the repo, not recoverable, also held in a password manager |
 | Domain proof | TXT record at the `dap.solutions` apex, starts `v=MCPv1`. The registry re-verifies domain ownership at each login, so removing this record blocks future publishes even though it does not break the existing listing. |
 | Republishing | Bump `version` in `server.json`, then `mcp-publisher login dns`, then `mcp-publisher publish`. The registry rejects a republish at the same version. |
-| Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per address per UTC day to the three data tools, then $0.01 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on or misconfigured. README, "The paid tier", has the switch-on steps. |
+| Paid tier | `src/pricing.js` and `src/payments.js`. 50 free calls per address per UTC day to the three data tools, then $0.01 USDC on Base through x402 (DAP Agent Payments). Off until the secret `X402_PAY_TO` is set; `/health` reports `payments.status` as off, on, misconfigured or degraded. README, "The paid tier", has the switch-on steps. |
+| Paid tier switched on | 2026-11-01 about 06:18 UTC, by Brendan running `scripts/switch-on.sh` on his Mac: CDP key checked with the facilitator, tables added, four secrets set, deploy version `61c5dd42-5ff9-4edd-af41-6eeeeec44bc1`, `/health` on, then from his Mac 50 of 50 searches free and call 51 priced at 10000 atomic USDC on Base to `0xa590d98bbee97533bd7dfed19c0a89ffeeeb1384`. Checked again from Chrome: `/health` on with 10 of 10 feeds, and the Claude connector still answers a search free. Off again: `npx wrangler secret delete X402_PAY_TO`. |
 
 ## The corrected endpoints
 
