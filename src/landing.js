@@ -7,10 +7,13 @@
  * claiming coverage the connector does not have, which is the one thing the
  * whole service is built not to do.
  *
- * Section brand: graphite ink on paper, Archivo for display, Hanken Grotesk
- * for text, JetBrains Mono for the URL and anything technical. Vermilion is
- * the single active mark and appears once, on the connector block, which is
- * the one thing a visitor came here to take away.
+ * DAP's 2026 brand and its one-screen design language, as on dap.solutions
+ * (brand/one-screen.md in dap-solutions-site). The first screen says four
+ * things over one photograph: the name, one headline, one line on what the
+ * visitor gets, and one action. Everything else sits below in short sections
+ * on the light Reading Room ground. Raleway Light for display, Archivo for
+ * text, JetBrains Mono for labels and the URL. One red line per view: the
+ * photograph's on the first screen, the connector block's below it.
  */
 
 import { SOURCES, JURISDICTIONS, enabledSources } from './sources.js';
@@ -35,8 +38,26 @@ function titleFor(pricing) {
     : 'DAP Bellwether, a free regulatory change feed';
 }
 
+/** The product's own line, as on dap.solutions. The count comes from the
+ *  registry, so the headline cannot claim a jurisdiction that is not watched. */
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+function headline() {
+  const count = new Set(enabledSources().map((s) => s.jurisdiction)).size;
+  const word = COUNT_WORDS[count] || String(count);
+  return `Regulator updates from ${word} jurisdiction${count === 1 ? '' : 's'}, in one feed.`;
+}
+
+/** The photograph, shared with the Bellwether page on dap.solutions. */
+const PHOTO = {
+  base: '/media/bellwether',
+  widths: [960, 1440, 1920],
+  width: 1920,
+  height: 1080,
+  alt: 'Four slender concrete towers far apart in still water at dusk, each lit at the top, joined by a thin vermilion line on the water.',
+};
+
 /** Describes the social card image, which is a file and the same in every state. */
-const CARD_ALT = `DAP Bellwether. ${TAGLINE} bellwether.dap.solutions`;
+const CARD_ALT = `DAP Bellwether. Regulator updates from four jurisdictions, in one feed. ${TAGLINE} Four concrete towers in still water at dusk, joined by a thin vermilion line. bellwether.dap.solutions`;
 
 /**
  * The one address this service should be indexed under.
@@ -184,6 +205,26 @@ function privacyMarkup() {
   return `<p>${esc(PRIVACY.intro)}</p>\n<dl>\n${rows}\n</dl>`;
 }
 
+/** The brand faces, self hosted: the page makes no third party font request. */
+const FONT_FACES = `@font-face{font-family:"Raleway";src:url("/fonts/Raleway-300.woff2") format("woff2");font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:"Archivo";src:url("/fonts/Archivo-400.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Archivo";src:url("/fonts/Archivo-600.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/JBMono-400.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}`;
+
+/** DAP 2026 colour tokens (dap.solutions/assets/tokens.css). */
+const TOKENS = `:root{
+  --carbon:#111517; --graphite:#23262A; --warm-white:#F8F9FA; --vermilion:#D8412F;
+  --bg:#F8F9FA; --surface:#FFFFFF; --ink:#111517; --ink-muted:#5B6168; --hairline:#E1E4E8; --rule:#8A9097;
+  --scrim:rgba(17,21,23,.34); --scrim-tall:rgba(17,21,23,.44);
+  --photo-ink-72:rgba(248,249,250,.72); --photo-ink-80:rgba(248,249,250,.80); --photo-ink-88:rgba(248,249,250,.88);
+  --display:"Raleway","Archivo",system-ui,sans-serif;
+  --sans:"Archivo",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}`;
+
+/** The DAP lockup for a dark ground, linking home. A supplied kit file, never redrawn. */
+const LOGO = '<a class="logo" href="https://dap.solutions"><img src="/brand/dap-logo-horizontal-carbon.svg" width="200" height="31" alt="DAP, Dartmouth Advisory Partners"></a>';
+
 /**
  * The page a person gets when they paste the connector URL into a browser
  * instead of into Claude.
@@ -193,9 +234,11 @@ function privacyMarkup() {
  * a JSON-RPC error saying SSE is not supported, reads as a broken service to
  * the one audience most likely to see it.
  *
- * Deliberately self contained rather than sharing the landing page's stylesheet:
- * this is a dead end page, and coupling it to the main sheet would mean every
- * future landing page change has to be re-checked here.
+ * Self contained rather than sharing the landing page's stylesheet: this is a
+ * dead end page, and coupling it to the main sheet would mean every future
+ * landing page change has to be re-checked here. It shares only the fonts and
+ * colour tokens, which are the brand, not the layout. The DAP lockup carries
+ * this view's one red line, so nothing else here is vermilion.
  *
  * @param {string} origin the request origin, so the URL shown is the one the
  *   visitor actually reached and will actually work
@@ -216,94 +259,50 @@ export function renderConnectorNotice(origin) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DAP Bellwether, connector endpoint</title>
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#15171A">
+<meta name="theme-color" content="#111517">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <style>
-@font-face{font-family:"Archivo";src:url("/fonts/Archivo-600.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
-@font-face{font-family:"Hanken Grotesk";src:url("/fonts/Hanken-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
-@font-face{font-family:"JetBrains Mono";src:url("/fonts/JBMono-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
-:root{
-  --paper:#F1F1ED; --field:#FBFBF8;
-  --graphite:#23262A; --carbon:#15171A;
-  --vermilion:#D8412F;
-  --steel:#8A9099; --steel-ink:#565B61;
-  --rule:#D6D6D0;
-  --display:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --text:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-}
+${FONT_FACES}
+${TOKENS}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{
-  margin:0;
-  background-color:var(--paper);
-  background-image:
-    repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 64px),
-    repeating-linear-gradient(to bottom, var(--rule) 0 1px, transparent 1px 64px);
-  background-size:64px 64px;
-  color:var(--graphite);
-  font-family:var(--text);
-  font-size:17px;
-  line-height:1.65;
-}
-body::before{content:"";position:fixed;inset:0;background:var(--paper);opacity:.88;z-index:-1}
-.wrap{max-width:47rem;margin:0 auto;padding:4rem 1.5rem 5rem}
-header{border-bottom:1px solid var(--rule);padding-bottom:1.75rem;margin-bottom:2.5rem}
-.eyebrow{
-  font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--steel-ink);margin:0 0 .85rem
-}
-h1{font-family:var(--display);font-weight:600;font-size:2.4rem;line-height:1.12;margin:0 0 .6rem;letter-spacing:-.015em}
-.lede{font-size:1.12rem;margin:0;max-width:36rem}
-p{margin:0 0 1rem;max-width:36rem}
-a{color:var(--graphite);text-underline-offset:.18em;text-decoration-color:var(--steel)}
-a:hover{text-decoration-color:var(--graphite)}
-.connector{
-  background:var(--field);
-  border:1px solid var(--rule);
-  border-left:3px solid var(--vermilion);
-  padding:1.35rem 1.5rem;
-  margin:1.25rem 0 1.5rem;
-}
-.connector .label{
-  font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--steel-ink);margin:0 0 .55rem
-}
-.url{font-family:var(--mono);font-size:1rem;word-break:break-all;margin:0;color:var(--carbon);user-select:all}
-ol{padding-left:1.15rem;max-width:36rem}
-ol li{margin-bottom:.45rem}
-footer{border-top:1px solid var(--rule);margin-top:3.5rem;padding-top:1.5rem;font-size:.9rem;color:var(--steel-ink)}
-footer p{max-width:36rem}
-@media (max-width:640px){
-  .wrap{padding:2.5rem 1.15rem 3.5rem}
-  h1{font-size:1.85rem}
-  body{font-size:16px}
-}
+body{margin:0;background:var(--carbon);color:var(--warm-white);font-family:var(--sans);font-size:16px;line-height:26px}
+a{color:inherit}
+.wrap{max-width:46rem;margin:0 auto;padding:40px 24px 64px}
+.logo{display:inline-block}
+.logo img{display:block;width:200px;height:auto}
+.meta{font-family:var(--mono);font-size:12px;line-height:16px;letter-spacing:.12em;text-transform:uppercase;color:var(--photo-ink-72);margin:64px 0 0}
+h1{font-family:var(--display);font-weight:300;font-size:clamp(34px,5vw,48px);line-height:1.12;letter-spacing:-.01em;margin:20px 0 0}
+.lede{margin:20px 0 0;max-width:34rem;color:var(--photo-ink-88);font-size:18px;line-height:28px}
+.connector{margin:40px 0 0;background:var(--graphite);border-top:1px solid rgba(248,249,250,.18);padding:20px 24px}
+.connector .meta{margin:0 0 8px}
+.url{font-family:var(--mono);font-size:16px;word-break:break-all;margin:0;user-select:all}
+ol{margin:28px 0 0;padding-left:1.2rem;max-width:34rem}
+li{margin:0 0 8px;color:var(--photo-ink-88)}
+.note{margin:20px 0 0;max-width:34rem;color:var(--photo-ink-72)}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid rgba(248,249,250,.18);color:var(--photo-ink-72);font-size:14px}
 </style>
 </head>
 <body>
 <div class="wrap">
-
-<header>
-  <p class="eyebrow">Dartmouth Advisory Partners</p>
-  <h1>This is a connector endpoint, not a web page</h1>
-  <p class="lede">This address is meant to be pasted into Claude as a custom connector rather than opened in a browser. Nothing is broken. There is simply nothing here for a browser to show.</p>
-</header>
+${LOGO}
+<p class="meta">DAP Bellwether / Connector endpoint</p>
+<h1>This is a connector endpoint, not a web page</h1>
+<p class="lede">Paste this address into Claude as a custom connector. Nothing is broken: there is simply nothing here for a browser to show.</p>
 
 <div class="connector">
-  <p class="label">Connector URL</p>
+  <p class="meta">Connector URL</p>
   <p class="url">${esc(mcpUrl)}</p>
 </div>
 <ol>
 ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
 </ol>
-<p>There is nothing to authenticate and nothing to configure. Adding a connector does not switch it on by itself, so the last step matters.</p>
+<p class="note">Nothing to sign in to. Adding a connector does not switch it on by itself, so the last step matters.</p>
 
 <footer>
-  <p>For what this service covers, who it is for and what it does not do, see <a href="${esc(origin)}/">${esc(host)}</a>.</p>
+  <p>What it covers and what it costs: <a href="${esc(origin)}/">${esc(host)}</a></p>
 </footer>
-
 </div>
 </body>
 </html>
@@ -313,9 +312,6 @@ ${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
 /**
  * @param {string} origin the request origin, so the page advertises the host
  *   it was actually reached on rather than a hardcoded one
- */
-/**
- * @param {string} origin the request origin
  * @param {object} [pricing] pricingSummary() of the live settings; off when absent
  */
 export function renderLanding(origin, pricing = { status: 'off' }) {
@@ -324,10 +320,9 @@ export function renderLanding(origin, pricing = { status: 'off' }) {
   const jurisdictionCount = new Set(enabledSources().map((s) => s.jurisdiction)).size;
   const title = esc(titleFor(pricing));
   const description = esc(describe(pricing));
-  const lede =
-    pricing && pricing.status === 'on'
-      ? `A regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. ${TAGLINE} No account, no key, no seat licence.`
-      : 'A free regulatory change feed for financial regulators in Canada, the United States, the United Kingdom and the European Union, delivered as an MCP connector. No account, no key, no seat licence.';
+  const on = pricing && pricing.status === 'on';
+  const line = on ? TAGLINE : 'Free. No account, no key.';
+  const srcset = PHOTO.widths.map((w) => `${PHOTO.base}-${w}.webp ${w}w`).join(', ');
 
   return `<!doctype html>
 <html lang="en-CA">
@@ -336,7 +331,7 @@ export function renderLanding(origin, pricing = { status: 'off' }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <meta name="description" content="${description}">
-<meta name="theme-color" content="#15171A">
+<meta name="theme-color" content="#111517">
 <link rel="canonical" href="${esc(CANONICAL_URL)}">
 
 <meta property="og:type" content="website">
@@ -344,15 +339,15 @@ export function renderLanding(origin, pricing = { status: 'off' }) {
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${esc(CANONICAL_URL)}">
-<meta property="og:image" content="${esc(origin)}/og.png">
-<meta property="og:image:type" content="image/png">
+<meta property="og:image" content="${esc(origin)}/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="${esc(CARD_ALT)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:description" content="${description}">
-<meta name="twitter:image" content="${esc(origin)}/og.png">
+<meta name="twitter:image" content="${esc(origin)}/og.jpg">
 <meta name="twitter:image:alt" content="${esc(CARD_ALT)}">
 
 <link rel="icon" href="/favicon.ico" sizes="any">
@@ -362,159 +357,175 @@ export function renderLanding(origin, pricing = { status: 'off' }) {
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/favicon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<link rel="preload" as="image" href="${PHOTO.base}-1440.webp" imagesrcset="${srcset}" imagesizes="100vw">
 
 <style>
-@font-face{font-family:"Archivo";src:url("/fonts/Archivo-600.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
-@font-face{font-family:"Hanken Grotesk";src:url("/fonts/Hanken-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
-@font-face{font-family:"JetBrains Mono";src:url("/fonts/JBMono-400.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
-
-:root{
-  --paper:#F1F1ED; --field:#FBFBF8; --sunk:#E9E9E3;
-  --graphite:#23262A; --carbon:#15171A;
-  --vermilion:#D8412F;
-  --steel:#8A9099; --steel-ink:#565B61;
-  --rule:#D6D6D0;
-  --display:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --text:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-}
+${FONT_FACES}
+${TOKENS}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{
-  margin:0;
-  background-color:var(--paper);
-  /* Blueprint substrate, kept faint. It should register as texture, not as a grid. */
-  background-image:
-    repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 64px),
-    repeating-linear-gradient(to bottom, var(--rule) 0 1px, transparent 1px 64px);
-  background-size:64px 64px;
-  color:var(--graphite);
-  font-family:var(--text);
-  font-size:17px;
-  line-height:1.65;
-}
-body::before{
-  /* Wash the substrate back so the grid sits under the ink rather than in it. */
-  content:"";position:fixed;inset:0;background:var(--paper);opacity:.88;z-index:-1;
-}
-.wrap{max-width:47rem;margin:0 auto;padding:4rem 1.5rem 5rem}
-header{border-bottom:1px solid var(--rule);padding-bottom:1.75rem;margin-bottom:2.5rem}
-.eyebrow{
-  font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--steel-ink);margin:0 0 .85rem
-}
-h1{font-family:var(--display);font-weight:600;font-size:2.4rem;line-height:1.12;margin:0 0 .6rem;letter-spacing:-.015em}
-.lede{font-size:1.12rem;margin:0;max-width:36rem}
-h2{font-family:var(--display);font-weight:600;font-size:1.28rem;margin:3rem 0 .9rem;letter-spacing:-.01em}
-h3{font-family:var(--display);font-weight:600;font-size:.92rem;margin:0 0 .5rem}
-p{margin:0 0 1rem;max-width:36rem}
-a{color:var(--graphite);text-underline-offset:.18em;text-decoration-color:var(--steel)}
-a:hover{text-decoration-color:var(--graphite)}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:26px}
+img{max-width:100%}
+a{color:inherit;text-underline-offset:.2em;text-decoration-thickness:1px}
+.wrap{width:100%;max-width:1440px;margin:0 auto;padding-left:80px;padding-right:80px}
+.meta{font-family:var(--mono);font-size:12px;line-height:16px;letter-spacing:.12em;text-transform:uppercase;font-weight:400}
+.disp{font-family:var(--display);font-weight:300;letter-spacing:-.01em}
+.btn{display:inline-flex;align-items:flex-end;gap:14px;min-height:44px;padding:0 0 8px;border-bottom:1px solid currentColor;text-decoration:none;font-family:var(--sans);font-weight:600;font-size:12px;line-height:16px;letter-spacing:.18em;text-transform:uppercase;transition:opacity .3s ease}
+.btn:hover{opacity:.7}
+.btn:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:4px}
 
-/* The single active mark on this surface. */
-.connector{
-  background:var(--field);
-  border:1px solid var(--rule);
-  border-left:3px solid var(--vermilion);
-  padding:1.35rem 1.5rem;
-  margin:1.25rem 0 1.5rem;
-}
-.connector .label{
-  font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--steel-ink);margin:0 0 .55rem
-}
-.url{
-  font-family:var(--mono);font-size:1rem;word-break:break-all;margin:0;
-  color:var(--carbon);user-select:all;
-}
-ol{padding-left:1.15rem;max-width:36rem}
-ol li{margin-bottom:.45rem}
-.jurs{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:1.5rem 2rem;margin:1.25rem 0}
-.jur h3{color:var(--steel-ink);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;font-family:var(--mono);font-weight:400}
+/* The first screen. */
+.one{position:relative;overflow:hidden;height:100vh;height:100svh;min-height:600px;max-height:1200px;background:var(--carbon);color:var(--warm-white)}
+.one-img{position:absolute;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:50% 50%}
+.one-scrim{position:absolute;inset:0;background:var(--scrim);pointer-events:none}
+.one-inner{position:relative;height:100%;display:flex;flex-direction:column;padding-top:32px;padding-bottom:clamp(24px,4vh,44px)}
+.logo{display:inline-block;align-self:flex-start}
+.logo img{display:block;width:200px;height:auto}
+.one-copy{max-width:700px;margin:auto 0}
+.one-name{margin:0;color:var(--photo-ink-80)}
+.one-title{margin:22px 0 0;font-size:clamp(42px,min(4.8vw,8.6vh),78px);line-height:1.04;color:var(--warm-white)}
+.one-line{margin:22px 0 0;max-width:32ch;font-size:clamp(19px,min(1.7vw,3vh),26px);line-height:1.4;color:var(--photo-ink-88)}
+.one-cta{margin-top:clamp(28px,4.5vh,44px);color:var(--warm-white)}
+
+/* Below the screen: short sections on the Reading Room ground. */
+.section{padding:72px 0;border-top:1px solid var(--hairline)}
+.section:first-child{border-top:0}
+.grid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:24px 64px}
+.section .meta{margin:0;color:var(--ink-muted)}
+h2{margin:14px 0 0;font-family:var(--display);font-weight:300;font-size:clamp(30px,3.2vw,44px);line-height:1.15;letter-spacing:-.01em}
+.body p{margin:0 0 16px;max-width:38rem}
+.body p:last-child{margin-bottom:0}
+.muted{color:var(--ink-muted)}
+
+/* The one active mark below the screen: the address a visitor came for. */
+.connector{background:var(--surface);border:1px solid var(--hairline);border-left:2px solid var(--vermilion);padding:20px 24px;margin:0 0 24px}
+.connector .meta{margin:0 0 8px;color:var(--ink-muted)}
+.url{font-family:var(--mono);font-size:16px;line-height:24px;word-break:break-all;margin:0;user-select:all}
+ol.steps{margin:0 0 16px;padding:0;list-style:none;counter-reset:step;max-width:38rem}
+ol.steps li{counter-increment:step;display:grid;grid-template-columns:32px 1fr;padding:12px 0;border-top:1px solid var(--hairline)}
+ol.steps li::before{content:counter(step,decimal-leading-zero);font-family:var(--mono);font-size:12px;color:var(--ink-muted);padding-top:1px}
+
+.tools{width:100%;border-collapse:collapse;max-width:38rem;margin:0 0 16px}
+.tools td{border-top:1px solid var(--hairline);padding:12px 16px 12px 0;vertical-align:top}
+.tools td:first-child{font-family:var(--mono);font-size:13px;white-space:nowrap;width:1%;padding-right:24px}
+
+.jurs{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:24px 32px;margin:0 0 16px}
+.jur h3{margin:0 0 8px;font-family:var(--mono);font-weight:400;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted)}
 ul.feeds{list-style:none;margin:0;padding:0}
-ul.feeds li{padding:.3rem 0;border-top:1px solid var(--rule);font-size:.95rem}
-.reg{font-family:var(--mono);font-size:.88rem}
-.feed{color:var(--steel-ink);font-size:.88rem}
-.note{font-size:.92rem;color:var(--steel-ink)}
-dl{margin:1rem 0;max-width:36rem}
-dt{font-family:var(--display);font-weight:600;font-size:.95rem;margin-top:1rem}
-dd{margin:.15rem 0 0}
-.tools{width:100%;border-collapse:collapse;margin:1rem 0;max-width:36rem}
-.tools td{border-top:1px solid var(--rule);padding:.5rem .75rem .5rem 0;vertical-align:top;font-size:.95rem}
-.tools td:first-child{font-family:var(--mono);font-size:.85rem;white-space:nowrap;width:1%;padding-right:1.25rem}
-footer{border-top:1px solid var(--rule);margin-top:3.5rem;padding-top:1.5rem;font-size:.9rem;color:var(--steel-ink)}
-footer p{max-width:36rem}
-.disclaimer{font-weight:400;color:var(--graphite)}
+ul.feeds li{padding:8px 0;border-top:1px solid var(--hairline);font-size:15px;line-height:22px}
+.reg{font-weight:600}
+.feed{color:var(--ink-muted)}
+.note{font-size:14px;line-height:22px;color:var(--ink-muted)}
+
+dl{margin:16px 0 0;max-width:46rem}
+dt{font-weight:600;margin:0;padding-top:14px;border-top:1px solid var(--hairline)}
+dd{margin:4px 0 14px;color:var(--ink-muted);font-size:15px;line-height:24px}
+
+footer{background:var(--carbon);color:var(--photo-ink-72);padding:40px 0 48px;font-size:14px;line-height:22px}
+footer p{margin:0 0 6px;max-width:46rem}
+.disclaimer{color:var(--warm-white)}
+
+@media (max-width:1100px){.wrap{padding-left:32px;padding-right:32px}.grid{grid-template-columns:1fr}}
+@media (max-width:640px),(orientation:portrait){
+  .one-scrim{background:var(--scrim-tall)}
+  .one-copy{margin:auto 0 32px}
+  .one-img{object-position:74% 50%}
+}
 @media (max-width:640px){
-  .wrap{padding:2.5rem 1.15rem 3.5rem}
-  h1{font-size:1.85rem}
-  body{font-size:16px}
+  .wrap{padding-left:16px;padding-right:16px}
+  .one-title{font-size:40px}
+  .logo img{width:180px}
+  .section{padding:48px 0}
+  .tools td:first-child{white-space:normal;word-break:break-all}
 }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header>
-  <p class="eyebrow">Dartmouth Advisory Partners</p>
-  <h1>DAP Bellwether</h1>
-  <p class="lede">${esc(lede)}</p>
-</header>
+<section class="one" aria-labelledby="page-title">
+  <img class="one-img" src="${PHOTO.base}-1440.webp" srcset="${srcset}" sizes="100vw" width="${PHOTO.width}" height="${PHOTO.height}" alt="${esc(PHOTO.alt)}" fetchpriority="high" decoding="async">
+  <div class="one-scrim" aria-hidden="true"></div>
+  <div class="wrap one-inner">
+    ${LOGO}
+    <div class="one-copy">
+      <p class="meta one-name">DAP Bellwether</p>
+      <h1 id="page-title" class="disp one-title">${esc(headline())}</h1>
+      <p class="one-line">${esc(line)}</p>
+      <a class="btn one-cta" href="#add">Add it to Claude <span aria-hidden="true">↓</span></a>
+    </div>
+  </div>
+</section>
 
-<h2>What it is</h2>
-<p>Bellwether collects what financial regulators publish, normalises it into one record shape, and serves it to any MCP client as a set of read-only tools. It holds prior state, so it can tell you that a document was amended after publication and what the earlier text said. That is the difference between detecting change and displaying a list.</p>
-<p>It is built for the people who have to keep track: compliance and legal teams, risk and policy functions, analysts covering regulated sectors, and anyone who would otherwise be checking ${feedCount} regulator pages by hand.</p>
-<p>Coverage begins from when the service first collected each source. It is not a complete historical archive, and the tools say so rather than letting an absence of results look like an absence of regulation.</p>
+<main>
+<section class="section" id="add" aria-labelledby="add-title"><div class="wrap grid">
+  <div><p class="meta">01 / Connect</p><h2 id="add-title">Add it to Claude</h2></div>
+  <div class="body">
+    <div class="connector">
+      <p class="meta">Connector URL</p>
+      <p class="url">${esc(mcpUrl)}</p>
+    </div>
+    <ol class="steps">
+${SETUP_STEPS.map((step) => `      <li>${esc(step)}</li>`).join('\n')}
+    </ol>
+    <p class="muted">Nothing to sign in to. Adding a connector does not switch it on by itself, so the last step matters. Free plan users can add one custom connector. On Team and Enterprise plans, an owner adds it for the organization first.</p>
+  </div>
+</div></section>
 
-<h2>Add it to Claude</h2>
-<div class="connector">
-  <p class="label">Connector URL</p>
-  <p class="url">${esc(mcpUrl)}</p>
-</div>
-<ol>
-${SETUP_STEPS.map((step) => `  <li>${esc(step)}</li>`).join('\n')}
-</ol>
-<p>There is nothing to authenticate and nothing to configure. Adding a connector does not switch it on by itself, so the last step matters. Free plan users are limited to one custom connector. On Team and Enterprise plans an owner adds it for the organization first.</p>
-
-<h2>Tools</h2>
-<table class="tools">
-  <tbody>
-    <tr><td>search_regulatory_changes</td><td>What a regulator has published on a topic, or in a window</td></tr>
-    <tr><td>recent_regulatory_changes</td><td>What is new across all regulators</td></tr>
-    <tr><td>get_regulatory_change</td><td>A full record, plus every revision observed since first collection</td></tr>
-    <tr><td>list_coverage</td><td>What is monitored, and how fresh each source is</td></tr>
-  </tbody>
-</table>
-<p>All four are read-only. There is no write surface.</p>
-
-<h2>Price</h2>
+<section class="section" id="price" aria-labelledby="price-title"><div class="wrap grid">
+  <div><p class="meta">02 / People and agents</p><h2 id="price-title">Price</h2></div>
+  <div class="body">
 ${priceMarkup(pricing)}
+    <p class="muted">Agents connect to the same URL over streamable HTTP. It is listed in the official MCP Registry as solutions.dap/bellwether.</p>
+  </div>
+</div></section>
 
-<h2>Coverage</h2>
-<p>${feedCount} feeds across ${jurisdictionCount} jurisdictions. This list is generated from the live source registry, so it is what the connector actually collects rather than what it once intended to.</p>
+<section class="section" id="tools" aria-labelledby="tools-title"><div class="wrap grid">
+  <div><p class="meta">03 / What it answers</p><h2 id="tools-title">Tools</h2></div>
+  <div class="body">
+    <table class="tools">
+      <tbody>
+        <tr><td>search_regulatory_changes</td><td>What a regulator has published on a topic, or in a window</td></tr>
+        <tr><td>recent_regulatory_changes</td><td>What is new across all regulators</td></tr>
+        <tr><td>get_regulatory_change</td><td>A full record, plus every revision observed since first collection</td></tr>
+        <tr><td>list_coverage</td><td>What is monitored, and how fresh each source is</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">All four are read-only. There is no write surface.</p>
+  </div>
+</div></section>
+
+<section class="section" id="coverage" aria-labelledby="coverage-title"><div class="wrap grid">
+  <div><p class="meta">04 / ${feedCount} feeds, ${jurisdictionCount} jurisdictions</p><h2 id="coverage-title">Coverage</h2></div>
+  <div class="body">
+    <p>This list comes from the live source registry, so it is what the connector actually collects.</p>
 ${coverageMarkup()}
+    <p class="note">Coverage begins when Bellwether first collected each source. It is not a complete historical archive, and the tools say so rather than let an absence of results look like an absence of regulation.</p>
+  </div>
+</div></section>
 
-<h2>How this was built</h2>
-<p>Bellwether went from a question to a deployed public service in under forty minutes, built by one person who does not write code, working with Claude.</p>
-<p>It runs on Cloudflare Workers with a D1 database and a cron trigger every six hours. The ingest normalises ${feedCount} feeds into one record shape and hashes each record, so an amendment is detected rather than quietly overwritten. The MCP layer is written against the streamable HTTP transport. There is a test suite, a privacy statement, a custom domain, and an entry in the official MCP Registry under a DNS verified namespace. Hosting costs nothing at this volume.</p>
-<p>The source is public under the MIT licence. <a href="https://github.com/bsibeth234/dap-bellwether">Read it, fork it, run your own.</a></p>
-<p>The point is not that the tool is clever. It is that the cost of building a working, governed, production system has collapsed, and most of what institutions license today was priced before that happened.</p>
+<section class="section" id="about" aria-labelledby="about-title"><div class="wrap grid">
+  <div><p class="meta">05 / About</p><h2 id="about-title">What it is</h2></div>
+  <div class="body">
+    <p>Bellwether collects what financial regulators publish, normalizes it into one record shape and serves it to any MCP client. It keeps prior versions, so it can show that a document was amended after publication, and what changed.</p>
+    <p>It went from a question to a deployed public service in under forty minutes, built by one person who does not write code, working with Claude. <a href="https://github.com/bsibeth234/dap-bellwether">The source is public under the MIT licence.</a></p>
+    <p>Dartmouth Advisory Partners builds systems like this for compliance, risk and investment teams. Results as a service, not software as a service. Work that is quoted in quarters elsewhere gets delivered here in weeks, and often in days. <a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></p>
+  </div>
+</div></section>
 
-<h2>Working with us</h2>
-<p>Dartmouth Advisory Partners is software in a service, not software as a service. We do not hand you a licence and wish you luck. You name the outcome. We build the system that produces it, in your environment, and you own what we build.</p>
-<p>We work with compliance, risk and investment functions at asset owners, asset managers, OCIOs, pensions, insurers and family offices. Work that is quoted in quarters elsewhere gets delivered here in weeks, and often in days. This page is the evidence, not the exception.</p>
-<p>If something here made you think of a problem in your own shop, that is the conversation.</p>
-<p><a href="mailto:bsibeth@dap.solutions">bsibeth@dap.solutions</a></p>
-
-<h2>Privacy</h2>
+<section class="section" id="privacy" aria-labelledby="privacy-title"><div class="wrap grid">
+  <div><p class="meta">06 / Privacy</p><h2 id="privacy-title">Privacy</h2></div>
+  <div class="body">
 ${privacyMarkup()}
+  </div>
+</div></section>
+</main>
 
-<footer>
+<footer><div class="wrap">
   <p class="disclaimer">This is a public information service. It is not legal or compliance advice.</p>
   <p>Built and maintained by <a href="https://dap.solutions">Dartmouth Advisory Partners</a>, Toronto. Source released under the MIT licence.</p>
-</footer>
+</div></footer>
 
-</div>
 </body>
 </html>
 `;

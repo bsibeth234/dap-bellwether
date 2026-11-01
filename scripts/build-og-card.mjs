@@ -1,123 +1,78 @@
 #!/usr/bin/env node
 /**
- * Render the 1200x630 social card to public/og.png.
+ * Render the 1200x630 social card to public/og.jpg.
  *
- * Run when the card design or the brand assets change:
- *   npm run build:og
+ * Run when the card design, the photograph or the brand assets change, then
+ * run npm run build:assets so the Worker serves the new bytes:
  *
- * Requires macOS: there is no ImageMagick, librsvg or cairosvg on this
- * machine, so rendering goes through qlmanage, which is WebKit, and sips.
- * The output is committed, so nobody needs this to deploy.
+ *   node scripts/build-og-card.mjs
  *
- * Two quirks of that toolchain drive the shape of this file:
+ * Needs Playwright with Chromium (npx playwright install chromium). The output
+ * is committed, so nobody needs this to deploy.
  *
- *   1. qlmanage renders into a square canvas at the requested size and puts
- *      the artwork at the top. So the card is drawn inside a 1200x1200 canvas,
- *      vertically centred, and sips then centre crops back to 1200x630. The
- *      crop lands exactly on the card because both halves of the padding are
- *      equal by construction.
- *   2. The brand faces are not installed system wide, so the fonts are
- *      embedded in the SVG as base64. WebKit honours that, checked before
- *      relying on it.
- *
- * Brand: paper ground, graphite ink, Archivo for the wordmark, Hanken Grotesk
- * for the description, JetBrains Mono for the URL. The icon mark appears once
- * and its own vermilion bar is the single vermilion on the surface, so nothing
- * else here is allowed to be vermilion.
+ * DAP 2026 brand, one-screen language: the Bellwether photograph under a flat
+ * carbon scrim, the name in JetBrains Mono, the product line in Raleway Light,
+ * the positioning in Archivo. The photograph's own vermilion line is the card's
+ * one red line, so nothing else on it is vermilion.
  */
 
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const fontsDir = join(root, 'public', 'fonts');
-const outFile = join(root, 'public', 'og.png');
+const pub = join(root, 'public');
+const outFile = join(pub, 'og.jpg');
 
-const WIDTH = 1200;
-const HEIGHT = 630;
-const CANVAS = 1200; // square, because qlmanage will pad to it anyway
-const PAD = (CANVAS - HEIGHT) / 2; // 285, the vertical offset of the card
-
-const PAPER = '#F1F1ED';
-const GRAPHITE = '#23262A';
-const STEEL_INK = '#565B61';
-const RULE = '#D6D6D0';
-
-const MARGIN = 90;
-
-function font(file) {
-  return readFileSync(join(fontsDir, file)).toString('base64');
-}
-
-const archivo = font('Archivo-600.ttf');
-const hanken = font('Hanken-400.ttf');
-const mono = font('JBMono-400.ttf');
-
-/**
- * The icon mark, from logo-svg/favicon.svg, scaled and positioned. Its four
- * bars are reproduced rather than referenced so this file renders standalone.
- * The vermilion bar here is the one vermilion element on the whole card.
- */
-function mark(x, y, size) {
-  const s = size / 120;
-  return `<g transform="translate(${x} ${y}) scale(${s})">
-    <rect x="0" y="0" width="120" height="120" rx="24" fill="#15171A"/>
-    <g transform="translate(12,12) scale(0.8)">
-      <rect x="18" y="15" width="84" height="12" fill="#F1F1ED"/>
-      <rect x="18" y="41" width="58" height="12" fill="#D8412F"/>
-      <rect x="18" y="67" width="84" height="12" fill="#F1F1ED"/>
-      <rect x="18" y="93" width="44" height="12" fill="#F1F1ED"/>
-    </g>
-  </g>`;
-}
-
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}" viewBox="0 0 ${CANVAS} ${CANVAS}">
-<style>
-@font-face{font-family:"A";src:url("data:font/ttf;base64,${archivo}") format("truetype");font-weight:600}
-@font-face{font-family:"H";src:url("data:font/ttf;base64,${hanken}") format("truetype");font-weight:400}
-@font-face{font-family:"M";src:url("data:font/ttf;base64,${mono}") format("truetype");font-weight:400}
-.wordmark{font-family:"A";font-weight:600;font-size:84px;fill:${GRAPHITE};letter-spacing:-1.2px}
-.desc{font-family:"H";font-weight:400;font-size:31px;fill:${GRAPHITE}}
-.url{font-family:"M";font-weight:400;font-size:26px;fill:${STEEL_INK}}
-</style>
-
-<rect width="${CANVAS}" height="${CANVAS}" fill="${PAPER}"/>
-
-<g transform="translate(0 ${PAD})">
-  ${mark(MARGIN, 88, 132)}
-  <text class="wordmark" x="${MARGIN}" y="342">DAP Bellwether</text>
-  <text class="desc" x="${MARGIN}" y="398">Free for people. Agents pay per call.</text>
-  <line x1="${MARGIN}" y1="482" x2="${WIDTH - MARGIN}" y2="482" stroke="${RULE}" stroke-width="1"/>
-  <text class="url" x="${MARGIN}" y="536">bellwether.dap.solutions</text>
-</g>
-</svg>`;
-
-const work = mkdtempSync(join(tmpdir(), 'bellwether-og-'));
+const require = createRequire(import.meta.url);
+let chromium;
 try {
-  const svgPath = join(work, 'og.svg');
-  const { writeFileSync } = await import('node:fs');
-  writeFileSync(svgPath, svg);
-
-  execFileSync('qlmanage', ['-t', '-s', String(CANVAS), '-o', work, svgPath], { stdio: 'ignore' });
-
-  const rendered = join(work, 'og.svg.png');
-  // Centre crop the square canvas back to the card. Equal padding above and
-  // below means this lands exactly on the drawn area.
-  execFileSync('sips', ['-c', String(HEIGHT), String(WIDTH), rendered], { stdio: 'ignore' });
-
-  copyFileSync(rendered, outFile);
-
-  const bytes = readFileSync(outFile);
-  const w = bytes.readUInt32BE(16);
-  const h = bytes.readUInt32BE(20);
-  if (w !== WIDTH || h !== HEIGHT) {
-    throw new Error(`rendered ${w}x${h}, expected ${WIDTH}x${HEIGHT}`);
-  }
-  console.log(`public/og.png written, ${w}x${h}, ${bytes.length} bytes`);
-} finally {
-  rmSync(work, { recursive: true, force: true });
+  ({ chromium } = require('playwright'));
+} catch {
+  console.error('Playwright is not installed. Run: npm i -D playwright && npx playwright install chromium');
+  process.exit(1);
 }
+
+const b64 = (file) => readFileSync(join(pub, file)).toString('base64');
+
+const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:"Raleway";src:url(data:font/woff2;base64,${b64('fonts/Raleway-300.woff2')}) format("woff2");font-weight:300}
+@font-face{font-family:"Archivo";src:url(data:font/woff2;base64,${b64('fonts/Archivo-400.woff2')}) format("woff2");font-weight:400}
+@font-face{font-family:"JetBrains Mono";src:url(data:font/woff2;base64,${b64('fonts/JBMono-400.woff2')}) format("woff2");font-weight:400}
+*{margin:0;box-sizing:border-box}
+body{width:1200px;height:630px;overflow:hidden;background:#111517}
+.card{position:relative;width:1200px;height:630px;color:#F8F9FA}
+.card img.photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:62% 50%}
+.scrim{position:absolute;inset:0;background:rgba(17,21,23,.40)}
+.inner{position:absolute;inset:0;padding:56px 64px;display:flex;flex-direction:column}
+.logo{width:220px;height:auto}
+.copy{margin-top:auto;max-width:640px}
+.name{font-family:"JetBrains Mono";font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:rgba(248,249,250,.80)}
+h1{margin-top:18px;font-family:"Raleway";font-weight:300;font-size:58px;line-height:1.06;letter-spacing:-.01em}
+.line{margin-top:20px;font-family:"Archivo";font-size:26px;line-height:1.35;color:rgba(248,249,250,.88)}
+.url{margin-top:28px;font-family:"JetBrains Mono";font-size:16px;letter-spacing:.06em;color:rgba(248,249,250,.72)}
+</style></head><body><div class="card">
+<img class="photo" src="data:image/webp;base64,${b64('media/bellwether-1440.webp')}" alt="">
+<div class="scrim"></div>
+<div class="inner">
+<img class="logo" src="data:image/svg+xml;base64,${b64('brand/dap-logo-horizontal-carbon.svg')}" alt="">
+<div class="copy">
+<p class="name">DAP Bellwether</p>
+<h1>Regulator updates from four jurisdictions, in one feed.</h1>
+<p class="line">Free for people. Agents pay per call.</p>
+<p class="url">bellwether.dap.solutions</p>
+</div></div></div></body></html>`;
+
+const browser = await chromium.launch();
+try {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 630 } });
+  await page.setContent(html, { waitUntil: 'load' });
+  await page.evaluate(() => document.fonts.ready);
+  // JPEG: the card is a photograph, and a PNG of it is six times the size.
+  await page.screenshot({ path: outFile, type: 'jpeg', quality: 86, clip: { x: 0, y: 0, width: 1200, height: 630 } });
+} finally {
+  await browser.close();
+}
+console.log(`public/og.jpg written, 1200x630, ${readFileSync(outFile).length} bytes`);

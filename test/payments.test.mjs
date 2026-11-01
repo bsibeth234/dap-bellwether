@@ -210,9 +210,9 @@ test('with the paid tier off, the instructions, /health and the page all say fre
   assert.deepEqual(health.payments, { status: 'off' });
 
   const page = await (await worker.fetch(new Request('https://bellwether.dap.solutions/'), env, {})).text();
-  assert.match(page, /<h2>Price<\/h2>\s*<p>Free\. Every tool, every call\. The paid tier is off\.<\/p>/);
+  assert.match(page, /<h2 id="price-title">Price<\/h2>[\s\S]*?<p>Free\. Every tool, every call\. The paid tier is off\.<\/p>/);
   assert.doesNotMatch(page, /calls a day to the three data tools/);
-  assert.doesNotMatch(page, /<p class="lede">[^<]*Agents pay per call/, 'no price claim while the tier is off');
+  assert.doesNotMatch(page, /<p class="one-line">[^<]*Agents pay per call/, 'no price claim while the tier is off');
 });
 
 test('a usage count that fails never touches the answer', async () => {
@@ -532,7 +532,7 @@ test('/health and the page state the price while the tier is on, and nothing sec
   assert.match(page, /Free for people: 2 calls a day from any one address to the three data tools/);
   assert.match(page, /Agents pay per call past that: \$0\.01 in USDC on Base Sepolia/);
   assert.match(page, /<title>DAP Bellwether, a regulatory change feed<\/title>/);
-  assert.match(page, /<p class="lede">[^<]*Free for people\. Agents pay per call\./);
+  assert.match(page, /<p class="one-line">Free for people\. Agents pay per call\.<\/p>/);
   assert.doesNotMatch(page, /a free regulatory change feed/i, 'no free claim while agents pay');
   assert.ok(page.includes('<a href="https://dap.solutions/solutions/systems/agent-payments/">DAP Agent Payments</a>'));
   assert.ok(!page.includes(PAY_TO));
