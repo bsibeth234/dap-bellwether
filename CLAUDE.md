@@ -106,10 +106,12 @@ Two failures were ours rather than the regulators':
   `test/payments.test.mjs` fails if a file drifts from the hashes in
   `src/x402/VENDORED.md`. Change it in dap-foundry, where its own tests run,
   then copy it across and update the hashes.
-- **Tests run with `--experimental-transform-types`** (Node 22.7 or later),
-  because the vendored library is TypeScript with parameter properties, which
-  plain type stripping refuses. Wrangler bundles it with esbuild, so the
-  deployed Worker needs nothing extra.
+- **Tests load the vendored TypeScript through esbuild** (`test/register-ts.mjs`),
+  not through Node's own TypeScript support. The library uses parameter
+  properties, which plain type stripping refuses, and Node 26 removed the
+  `--experimental-transform-types` flag that once allowed them (found on
+  Brendan's Mac, 1 November 2026). Wrangler bundles the same files with
+  esbuild, so tests and the Worker read one source. Node 22.5 or later.
 - **A bad payment setting fails open.** The paid tier stays off and `/health`
   names the setting. This is a public information service: a mistake should
   cost revenue, never a light user's answer. A facilitator outage during a

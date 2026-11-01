@@ -5,11 +5,11 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22.7"
+    "node": ">=22.5"
   },
   "license": "MIT",
   "scripts": {
-    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --test test/*.test.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --import ./test/register-ts.mjs --test test/*.test.mjs",
     "verify:sources": "node scripts/verify-sources.mjs",
     "build:favicon": "node scripts/build-favicon-ico.mjs",
     "build:og": "node scripts/build-og-card.mjs",
@@ -26,6 +26,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "esbuild": "0.28.1",
     "wrangler": "^4.0.0"
   }
 }
