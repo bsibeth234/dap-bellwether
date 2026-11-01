@@ -13,8 +13,59 @@
 import { JURISDICTIONS, SOURCES, enabledSources } from './sources.js';
 import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun } from './db.js';
 
-const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
-const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
+export const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
+export const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
+
+const DATE_INPUT =
+  /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:[Tt ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?\s*([Zz]|[+-]\d{2}:?\d{2})?)?)?)?$/;
+
+/**
+ * A since or until bound as the store writes times (toISOString, UTC with
+ * milliseconds), so the text comparison in searchChanges is a time
+ * comparison. A year, a month or a date covers that whole period in UTC:
+ * since starts at its first millisecond, until ends at its last. A time may
+ * use T or a space, and its zone may be Z, +hh:mm or +hhmm; a time without a
+ * zone is read as UTC. Returns null for anything that is not a real time.
+ *
+ * @param {unknown} value
+ * @param {'since'|'until'} edge
+ * @returns {string|null}
+ */
+export function dateBound(value, edge) {
+  if (typeof value !== 'string') return null;
+  const m = DATE_INPUT.exec(value.trim());
+  if (!m) return null;
+  const [, ys, mos, ds, hs, mis, ss, frac, zone] = m;
+  const y = Number(ys);
+  const mo = mos === undefined ? null : Number(mos);
+  const d = ds === undefined ? null : Number(ds);
+  if (mo !== null && (mo < 1 || mo > 12)) return null;
+  if (d !== null) {
+    const day = new Date(Date.UTC(y, mo - 1, d));
+    if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return null;
+  }
+  if (hs === undefined) {
+    // A whole year, month or day.
+    const start = Date.UTC(y, mo === null ? 0 : mo - 1, d === null ? 1 : d);
+    const end =
+      d !== null ? Date.UTC(y, mo - 1, d + 1) : mo !== null ? Date.UTC(y, mo, 1) : Date.UTC(y + 1, 0, 1);
+    return new Date(edge === 'until' ? end - 1 : start).toISOString();
+  }
+  const h = Number(hs);
+  const mi = Number(mis);
+  const sec = ss === undefined ? 0 : Number(ss);
+  if (h > 23 || mi > 59 || sec > 59) return null;
+  const ms = frac === undefined ? 0 : Math.floor(Number(`0${frac}`) * 1000);
+  let offsetMinutes = 0;
+  if (zone && zone.toUpperCase() !== 'Z') {
+    const z = /^([+-])(\d{2}):?(\d{2})$/.exec(zone);
+    const oh = Number(z[2]);
+    const om = Number(z[3]);
+    if (oh > 23 || om > 59) return null;
+    offsetMinutes = (z[1] === '-' ? -1 : 1) * (oh * 60 + om);
+  }
+  return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMinutes * 60000).toISOString();
+}
 
 export const TOOLS = [
   {
@@ -162,13 +213,21 @@ export async function callTool(name, args, env) {
 
   switch (name) {
     case 'search_regulatory_changes': {
+      const bounds = {};
+      for (const edge of ['since', 'until']) {
+        if (input[edge] === undefined || input[edge] === null || input[edge] === '') continue;
+        bounds[edge] = dateBound(input[edge], edge);
+        if (bounds[edge] === null) {
+          return errorResult(`${edge} must be an ISO 8601 date or timestamp, for example 2026-10-01.`);
+        }
+      }
       const rows = await searchChanges(db, {
         query: input.query,
         jurisdiction: input.jurisdiction,
         regulator: input.regulator,
         category: input.category,
-        since: input.since,
-        until: input.until,
+        since: bounds.since,
+        until: bounds.until,
         limit: input.limit || 20,
       });
       if (!rows.length) {

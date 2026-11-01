@@ -210,7 +210,7 @@ test('with the paid tier off, the instructions, /health and the page all say fre
   assert.deepEqual(health.payments, { status: 'off' });
 
   const page = await (await worker.fetch(new Request('https://bellwether.dap.solutions/'), env, {})).text();
-  assert.match(page, /<h2 id="price-title">Price<\/h2>[\s\S]*?<p>Free\. Every tool, every call\. The paid tier is off\.<\/p>/);
+  assert.match(page, /<h2 id="price-title">Price<\/h2>[\s\S]*?<p>Free\. Every tool, every call, including the JSON API\. The paid tier is off\.<\/p>/);
   assert.doesNotMatch(page, /calls a day to the three data tools/);
   assert.doesNotMatch(page, /<p class="one-line">[^<]*Agents pay per call/, 'no price claim while the tier is off');
 });
