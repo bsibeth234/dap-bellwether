@@ -99,6 +99,7 @@ export function openApiDocument() {
         'The records behind the DAP Bellwether connector, for agents and systems that call HTTP rather than MCP. ' +
         'The same records are free for people through the connector at https://bellwether.dap.solutions/mcp. ' +
         `${PAYMENT} This is a public information service. It is not legal or compliance advice.`,
+      termsOfService: 'https://dap.solutions/terms/api/',
       contact: { name: 'Dartmouth Advisory Partners', email: 'bsibeth@dap.solutions', url: ORIGIN },
     },
     servers: [{ url: ORIGIN }],

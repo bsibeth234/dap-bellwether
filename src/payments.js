@@ -274,7 +274,7 @@ async function explainAllowance(response, pricing, nowMs) {
     text:
       `The free allowance of ${pricing.freeCallsPerDay} calls a day to Bellwether's data tools is used up for this caller. ` +
       `Each further call costs ${pricing.price} in USDC on ${pricing.network.label}, paid per call with x402 (DAP Agent Payments). ` +
-      `The allowance resets at ${nextReset(nowMs)}. list_coverage stays free.`,
+      `The allowance resets at ${nextReset(nowMs)}. list_coverage stays free. Use is under the DAP API terms: https://dap.solutions/terms/api/.`,
   });
   const headers = new Headers(response.headers);
   headers.delete('content-length');

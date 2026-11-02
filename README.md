@@ -89,6 +89,12 @@ Two limits worth knowing:
 - **ESMA publishes no date on its items.** Those records are ordered by when Bellwether first collected them, and every result says so in place of a date rather than showing a collection date where a publication date belongs. Their first appearance is a burst of items all collected the same day.
 - **The United Kingdom rests on the FCA alone.** If that feed breaks, the jurisdiction goes dark, and `list_coverage` will show it.
 
+### Source limits
+
+Some regulators' terms restrict commercial reuse. Records from OSFI, the OSC, the FCA and FINRA answer with title, date and link, so the regulator's own page remains the place to read them. FINRA collection is paused. ESMA material is available free of charge on the ESMA website.
+
+Use of the API and connector is under the [DAP API terms](https://dap.solutions/terms/api/).
+
 ## Architecture
 
 ```
@@ -217,7 +223,7 @@ This section is kept word for word in step with the privacy section rendered on 
 - **Licences.** An institution that takes a licence has one record: its name as written on the licence, an internal note about the agreement, when the licence was issued and revoked, and a one-way hash of its key. The key itself is never stored. Each answered call under a licence adds one to a daily count for that licence and endpoint, which is what the invoice reads. No query or address is stored with it.
 - **Accounts.** There are none for people. The service has no sign in, so it holds no passwords or email addresses. A licence is not an account: it holds only what the Licences row describes.
 - **Analytics.** This page uses Cloudflare Web Analytics, a cookieless measurement service. It records the page viewed, the referring link, browser and operating system, approximate country and page load timings. It sets no cookies and writes nothing to your device. Visitor IP addresses are used to derive country and are not stored by the service. The connector endpoint at /mcp does not load the beacon. Tool calls are counted only as described above.
-- **Third party sharing.** Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
+- **Third party sharing.** We do not sell personal information. Regulatory records are free within the daily allowance, then by paid call or licence. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.
 - **Retention.** Regulatory records and their revision history are retained indefinitely, because the historical record is the point of the service. Daily totals per tool are retained to report usage. Allowance counts are deleted once their day ends, and payment claims once they expire. Licence records and their daily counts are kept for invoicing and audit. Like everything in the database, a deleted row stays in Cloudflare D1's point-in-time recovery for up to 30 days, where only the service can restore it. Request parameters are not retained.
 - **Infrastructure.** Hosted on Cloudflare Workers and D1, with Cloudflare Web Analytics on this page. The Worker keeps no request logs: it logs errors and the collection summary, never a caller's address or query. Cloudflare processes requests as an infrastructure provider and as an analytics processor under its own terms. Paid calls settle through Coinbase's x402 facilitator under its own terms.
 - **Contact.** bsibeth@dap.solutions

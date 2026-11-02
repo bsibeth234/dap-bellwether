@@ -6,6 +6,8 @@
  * and what a classification layer will later enrich rather than replace.
  */
 
+import { linkOnlySourceIds, servable } from './sources.js';
+
 /** SHA-256 hex. Available in Workers and in Node 20+ without a polyfill. */
 export async function sha256(input) {
   const bytes = new TextEncoder().encode(input);
@@ -164,9 +166,13 @@ export async function searchChanges(db, { query, jurisdiction, regulator, catego
     // The ESCAPE clause is required: without it SQLite treats the backslash as
     // a literal, so a user searching for "50%" would still get wildcard
     // behaviour rather than a search for the string.
-    where.push("(title LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\')");
+    // A linkOnly source is matched on its title alone.
+    const held = linkOnlySourceIds();
+    where.push(
+      `(title LIKE ? ESCAPE '\\' OR (summary LIKE ? ESCAPE '\\' AND source_id NOT IN (${held.map(() => '?').join(', ')})))`
+    );
     const like = `%${query.replace(/[%_\\]/g, (m) => '\\' + m)}%`;
-    binds.push(like, like);
+    binds.push(like, like, ...held);
   }
   if (jurisdiction) {
     where.push('jurisdiction = ?');
@@ -212,7 +218,7 @@ export async function searchChanges(db, { query, jurisdiction, regulator, catego
     .prepare(sql)
     .bind(...binds, Math.min(Math.max(limit || 20, 1), 100))
     .all();
-  return results || [];
+  return (results || []).map(servable);
 }
 
 export async function getChange(db, id) {
@@ -230,7 +236,7 @@ export async function getChange(db, id) {
     .bind(id)
     .all();
 
-  return { ...record, revisions: results || [] };
+  return servable({ ...record, revisions: results || [] });
 }
 
 export async function countChanges(db) {

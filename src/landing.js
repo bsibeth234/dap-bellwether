@@ -120,7 +120,7 @@ export const PRIVACY = {
     ],
     [
       'Third party sharing',
-      "Regulatory data is not sold, shared or transferred. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.",
+      "We do not sell personal information. Regulatory records are free within the daily allowance, then by paid call or licence. This page loads no third party fonts, no advertising and no cross site trackers. The only third party request it makes is the analytics beacon described above. A paid call's payment authorization goes to Coinbase's x402 facilitator, which verifies it and settles the transfer on the Base network, where the transfer is public. The query is never sent to it.",
     ],
     [
       'Retention',
