@@ -8,7 +8,7 @@
  */
 
 import { CATEGORIES, JURISDICTION_CODES } from './tools.js';
-import { PRICE } from './pricing.js';
+import { API_ENDPOINTS, PRICE } from './pricing.js';
 
 const ORIGIN = 'https://bellwether.dap.solutions';
 
@@ -88,6 +88,9 @@ const paidHeaders = {
 
 const security = [{}, { licenceKey: [] }, { licenceKeyHeader: [] }];
 
+/** What an x402 directory reads to price an operation without calling it. */
+const paymentInfo = { protocols: ['x402'], price: { mode: 'fixed', currency: 'USD', amount: PRICE.replace('$', '') } };
+
 export function openApiDocument() {
   return {
     openapi: '3.1.0',
@@ -109,6 +112,7 @@ export function openApiDocument() {
       '/api/search': {
         get: {
           operationId: 'searchRegulatoryChanges',
+          'x-payment-info': paymentInfo,
           summary: 'Search publications by keyword, jurisdiction, regulator, category or date.',
           description: `Most recent first. Dated records rank above undated ones. ${PRICE} per call.`,
           parameters: [
@@ -129,6 +133,7 @@ export function openApiDocument() {
       '/api/recent': {
         get: {
           operationId: 'recentRegulatoryChanges',
+          'x-payment-info': paymentInfo,
           summary: 'The newest publications across every covered regulator.',
           description: `Newest first. ${PRICE} per call.`,
           parameters: [
@@ -145,6 +150,7 @@ export function openApiDocument() {
       '/api/change': {
         get: {
           operationId: 'getRegulatoryChange',
+          'x-payment-info': paymentInfo,
           summary: 'One record in full, with every revision observed since first collection.',
           description: `${PRICE} per call. A record that does not exist answers 404 and is never charged.`,
           parameters: [{ name: 'id', in: 'query', required: true, description: 'Record id from a search or recent result.', schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
@@ -203,5 +209,16 @@ export function openApiDocument() {
         licenceKeyHeader: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'The same DAP licence key, for platforms that set an API key header.' },
       },
     },
+  };
+}
+
+/**
+ * The x402 discovery file served at /.well-known/x402. It names the endpoints
+ * that carry an input schema, because a directory cannot index one without it.
+ */
+export function wellKnownX402() {
+  return {
+    version: 1,
+    resources: API_ENDPOINTS.filter((endpoint) => endpoint.discovery).map((endpoint) => `${ORIGIN}${endpoint.path}`),
   };
 }

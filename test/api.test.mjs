@@ -7,7 +7,7 @@ import { handleApi, pricedByGate, resolveEndpoint, parseParams } from '../src/ap
 import { handleMcp } from '../src/payments.js';
 import { dateBound } from '../src/tools.js';
 import { pricingFor, API_ENDPOINTS } from '../src/pricing.js';
-import { openApiDocument } from '../src/openapi.js';
+import { openApiDocument, wellKnownX402 } from '../src/openapi.js';
 import { runIngest } from '../src/ingest.js';
 import { canonicalPath } from '../src/x402/path.ts';
 import { decodeHeader, encodeHeader } from '../src/x402/codec.ts';
@@ -540,6 +540,27 @@ test('the OpenAPI document matches the router, and is served', async () => {
   assert.equal(served.status, 200);
   assert.match(served.headers.get('content-type'), /application\/json/);
   assert.equal((await served.json()).info.title, 'DAP Bellwether API');
+});
+
+test('the x402 discovery file names the indexable endpoints, and every paid operation states its price', async () => {
+  const doc = openApiDocument();
+  for (const endpoint of API_ENDPOINTS) {
+    assert.deepEqual(doc.paths[endpoint.path].get['x-payment-info'], {
+      protocols: ['x402'],
+      price: { mode: 'fixed', currency: 'USD', amount: '0.01' },
+    });
+    assert.ok(doc.paths[endpoint.path].get.responses['402'], `${endpoint.path} documents its 402`);
+  }
+  assert.equal(doc.paths['/api/coverage'].get['x-payment-info'], undefined);
+  assert.deepEqual(wellKnownX402(), {
+    version: 1,
+    resources: [`${ORIGIN}/api/search`, `${ORIGIN}/api/recent`],
+  });
+  const served = await worker.fetch(new Request(`${ORIGIN}/.well-known/x402`), { DB: new TestD1() }, context());
+  assert.equal(served.status, 200);
+  assert.match(served.headers.get('content-type'), /application\/json/);
+  assert.equal(served.headers.get('access-control-allow-origin'), '*');
+  assert.deepEqual(await served.json(), wellKnownX402());
 });
 
 test('/health says whether the licence database is bound and ready', async () => {
