@@ -27,6 +27,7 @@ const INSTRUCTIONS = [
   'Coverage starts from when this service first collected each source, so it is not a complete historical archive. Say so if a user asks about material older than the coverage window.',
   'Use list_coverage before concluding that something was not published, so an absence of results is not mistaken for an absence of regulation.',
   'This is a public information service. It is not legal or compliance advice.',
+  'Use of this service is under the DAP API terms at https://dap.solutions/terms/api/. Calling a tool, sending a payment or using a licence key accepts them.',
 ].join(' ');
 
 /** The instructions, plus the price while the paid tier is on, so an agent

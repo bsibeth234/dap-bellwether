@@ -31,6 +31,9 @@
  *   sparse       optional, true when an empty window is normal rather than
  *                broken, so verification warns instead of failing
  *   maxAgeDays   optional, override the staleness threshold for this feed
+ *   linkOnly     optional, true when the source's terms bar commercial reuse of
+ *                its text: answers carry title, date and link, never the summary
+ *   sourceNotice optional, a line the source's terms require beside its material
  */
 
 export const SOURCES = [
@@ -49,6 +52,8 @@ export const SOURCES = [
     category: 'news',
     enabled: true,
     verified: true,
+    // OSFI terms: commercial redistribution needs prior written permission.
+    linkOnly: true,
   },
   {
     id: 'ca-osc-news',
@@ -68,6 +73,8 @@ export const SOURCES = [
     category: 'news',
     enabled: true,
     verified: true,
+    // Held to title, date and link until the OSC's terms have been read.
+    linkOnly: true,
   },
   {
     id: 'ca-ciro-bulletins',
@@ -143,8 +150,13 @@ export const SOURCES = [
     feedUrl: 'https://www.finra.org/rules-guidance/notices/rss',
     homepage: 'https://www.finra.org/rules-guidance/notices',
     category: 'guidance',
-    enabled: true,
+    // Paused 2 November 2026. FINRA's terms allow non-commercial use only and
+    // bar building a database or using robots, so collection stops until FINRA
+    // gives written permission. Records already held answer with title, date
+    // and link only.
+    enabled: false,
     verified: true,
+    linkOnly: true,
   },
   {
     id: 'us-cftc-press',
@@ -174,6 +186,9 @@ export const SOURCES = [
     category: 'news',
     enabled: true,
     verified: true,
+    // FCA legal terms, clause 3.3: no reproduction in a retrieval system or
+    // service without prior written permission.
+    linkOnly: true,
   },
   {
     id: 'uk-tpr-news',
@@ -202,6 +217,9 @@ export const SOURCES = [
     feedUrl: 'https://www.esma.europa.eu/rss.xml',
     homepage: 'https://www.esma.europa.eu/press-news',
     category: 'news',
+    // ESMA's legal notice: when its material is part of something sold, buyers
+    // must be told it is free from ESMA.
+    sourceNotice: 'This material is available free of charge on the ESMA website.',
     enabled: true,
     verified: true,
     // ESMA ships items with title, link and description and no date element
@@ -267,4 +285,27 @@ export function enabledSources() {
 /** @returns {object|undefined} */
 export function sourceById(id) {
   return SOURCES.find((s) => s.id === id);
+}
+
+/**
+ * A record as it may be served. A linkOnly source loses its summary, on the
+ * record and on every revision. Stored text stays stored; it is not served.
+ * A source's required notice travels with the record.
+ */
+export function servable(row) {
+  if (!row) return row;
+  const source = sourceById(row.source_id);
+  if (!source) return row;
+  const out = { ...row };
+  if (source.linkOnly) {
+    out.summary = null;
+    if (Array.isArray(row.revisions)) out.revisions = row.revisions.map((r) => ({ ...r, summary: null }));
+  }
+  if (source.sourceNotice) out.source_notice = source.sourceNotice;
+  return out;
+}
+
+/** Sources whose stored text must not be searched, so a match cannot reveal it. */
+export function linkOnlySourceIds() {
+  return SOURCES.filter((s) => s.linkOnly).map((s) => s.id);
 }

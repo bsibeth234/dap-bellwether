@@ -188,6 +188,7 @@ function formatChange(row) {
   ];
   if (row.summary) lines.push(row.summary);
   if (row.url) lines.push(row.url);
+  if (row.source_notice) lines.push(row.source_notice);
   if (row.revision > 1) {
     lines.push(`Amended since first publication: revision ${row.revision}.`);
   }

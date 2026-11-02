@@ -28,7 +28,7 @@ import { API_ENDPOINTS, pricingFor } from './pricing.js';
 import { countLicensedCall, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
 import { MAX_PAYMENT_VALIDITY_SECONDS, recordUsage, utcDay } from './payments.js';
 
-const NOTICE = 'This is a public information service. It is not legal or compliance advice.';
+const NOTICE = 'This is a public information service. It is not legal or compliance advice. Use is under the DAP API terms: https://dap.solutions/terms/api/.';
 const COVERAGE_NOTE =
   'Coverage begins from when this service first collected each source, so older material may not be present. Check /api/coverage before reading an absence of results as an absence of publications.';
 
@@ -184,6 +184,7 @@ function record(row) {
     title: row.title,
     summary: row.summary || null,
     url: row.url || null,
+    ...(row.source_notice ? { source_notice: row.source_notice } : {}),
     published_at: row.published_at || null,
     first_collected_at: row.first_seen_at,
     last_confirmed_at: row.last_seen_at,

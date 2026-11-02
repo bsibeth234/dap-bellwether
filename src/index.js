@@ -24,6 +24,16 @@ import { enabledSources } from './sources.js';
 import { renderLanding } from './landing.js';
 import { serveAsset } from './assets.js';
 
+const TERMS_LINK = '<https://dap.solutions/terms/api/>; rel="terms-of-service"';
+
+/** Every answer on /mcp and /api names the API terms, including a 402. The body is not touched. */
+function withTerms(response) {
+  const out = new Response(response.body, response);
+  out.headers.append('Link', TERMS_LINK);
+  out.headers.append('Access-Control-Expose-Headers', 'Link');
+  return out;
+}
+
 /**
  * Whether this request arrived on the workers.dev fallback rather than the
  * custom domain. Matched on the suffix rather than the exact hostname so a
@@ -55,14 +65,14 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/mcp') {
-      return handleMcp(request, env, ctx);
+      return withTerms(await handleMcp(request, env, ctx));
     }
 
     // Routed on the canonical path, the same one the gate prices, so every
     // spelling of an API path reaches the API and its price.
     const canonical = canonicalPath(url.pathname);
     if (canonical === '/api' || (canonical && canonical.startsWith('/api/'))) {
-      return handleApi(request, env, ctx);
+      return withTerms(await handleApi(request, env, ctx));
     }
 
     if (url.pathname === '/openapi.json') {
