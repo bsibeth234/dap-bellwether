@@ -70,7 +70,7 @@ Institutions can take a licence instead of paying per call: one agreement, one i
 ## Coverage
 
 Canada: OSFI, OSC.
-United States: SEC (press releases, and proposed and final rules through the Federal Register), FINRA, CFTC.
+United States: SEC (press releases, and proposed and final rules through the Federal Register), CFTC.
 United Kingdom: FCA.
 European Union: ESMA, EBA.
 

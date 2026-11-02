@@ -14,7 +14,7 @@
 import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.js';
 import { handleApi } from './api.js';
 import { licenceStoreReady } from './licences.js';
-import { openApiDocument } from './openapi.js';
+import { openApiDocument, wellKnownX402 } from './openapi.js';
 import { canonicalPath } from './x402/path.ts';
 import { purgePaymentClaims } from './claims.js';
 import { pricingFor, pricingSummary } from './pricing.js';
@@ -75,8 +75,9 @@ export default {
       return withTerms(await handleApi(request, env, ctx));
     }
 
-    if (url.pathname === '/openapi.json') {
-      return new Response(JSON.stringify(openApiDocument(), null, 2), {
+    if (url.pathname === '/openapi.json' || url.pathname === '/.well-known/x402') {
+      const document = url.pathname === '/openapi.json' ? openApiDocument() : wellKnownX402();
+      return new Response(JSON.stringify(document, null, 2), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'public, max-age=300',
