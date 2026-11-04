@@ -21,7 +21,7 @@
     "db:migrate:local": "wrangler d1 execute bellwether --file=./schema.sql --local",
     "db:migrate:licences": "wrangler d1 execute dap-licences --file=./licences.sql --remote",
     "db:migrate:licences:local": "wrangler d1 execute dap-licences --file=./licences.sql --local",
-    "deploy": "wrangler deploy",
+    "deploy": "node scripts/check-bazaar-examples.mjs && wrangler deploy",
     "tail": "wrangler tail"
   },
   "dependencies": {
