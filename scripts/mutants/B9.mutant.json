@@ -1,0 +1,11 @@
+{
+  "id": "B9",
+  "description": "a 402 challenge counted as a paid API call in analytics",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "  if (response.status === 402) return 'challenged';",
+      "replace": "  if (response.status === 402) return 'paid';"
+    }
+  ]
+}

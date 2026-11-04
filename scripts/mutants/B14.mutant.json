@@ -1,0 +1,11 @@
+{
+  "id": "B14",
+  "description": "the analytics write throwing into the answer",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "  try {\n    dataset.writeDataPoint({\n      indexes: [SURFACE],\n      blobs: [SURFACE, String(call.tool).slice(0, 96), call.outcome, call.payer || '', call.network || '', call.rail],\n      doubles: [amount, Number(call.status) || 0, 1],\n    });\n    return true;\n  } catch {\n    return false;\n  }",
+      "replace": "  dataset.writeDataPoint({\n    indexes: [SURFACE],\n    blobs: [SURFACE, String(call.tool).slice(0, 96), call.outcome, call.payer || '', call.network || '', call.rail],\n    doubles: [amount, Number(call.status) || 0, 1],\n  });\n  return true;"
+    }
+  ]
+}

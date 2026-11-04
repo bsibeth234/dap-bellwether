@@ -92,7 +92,7 @@ export const PRIVACY = {
   rows: [
     [
       'What is stored',
-      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.',
+      'Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. Each answered call also adds one record to Cloudflare Workers Analytics Engine: the tool, the outcome, the amount paid, the time and, for a paid call, a one way hash of the paying wallet. It never holds the query, the network address, the wallet address or the licence key. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.',
     ],
     [
       'What is received',

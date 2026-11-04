@@ -8,7 +8,8 @@
  */
 
 import { CATEGORIES, JURISDICTION_CODES } from './tools.js';
-import { API_ENDPOINTS, PRICE } from './pricing.js';
+import { API_ENDPOINTS, PRICE, discoveryFor } from './pricing.js';
+import { describeApi } from './descriptions.js';
 
 const ORIGIN = 'https://bellwether.dap.solutions';
 
@@ -114,7 +115,7 @@ export function openApiDocument() {
           operationId: 'searchRegulatoryChanges',
           'x-payment-info': paymentInfo,
           summary: 'Search publications by keyword, jurisdiction, regulator, category or date.',
-          description: `Most recent first. Dated records rank above undated ones. ${PRICE} per call.`,
+          description: `${describeApi('search_regulatory_changes')} Dated records rank above undated ones.`,
           parameters: [
             { name: 'query', in: 'query', required: false, description: 'Keywords matched against title and summary.', schema: { type: 'string', minLength: 1, maxLength: 200 } },
             jurisdiction,
@@ -135,7 +136,7 @@ export function openApiDocument() {
           operationId: 'recentRegulatoryChanges',
           'x-payment-info': paymentInfo,
           summary: 'The newest publications across every covered regulator.',
-          description: `Newest first. ${PRICE} per call.`,
+          description: describeApi('recent_regulatory_changes'),
           parameters: [
             jurisdiction,
             { name: 'days', in: 'query', required: false, description: 'Look back this many days.', schema: { type: 'integer', minimum: 1, maximum: 365, default: 14 } },
@@ -152,7 +153,7 @@ export function openApiDocument() {
           operationId: 'getRegulatoryChange',
           'x-payment-info': paymentInfo,
           summary: 'One record in full, with every revision observed since first collection.',
-          description: `${PRICE} per call. A record that does not exist answers 404 and is never charged.`,
+          description: `${describeApi('get_regulatory_change')} A record that does not exist answers 404 and is never charged.`,
           parameters: [{ name: 'id', in: 'query', required: true, description: 'Record id from a search or recent result.', schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
           responses: {
             '200': {
@@ -214,11 +215,12 @@ export function openApiDocument() {
 
 /**
  * The x402 discovery file served at /.well-known/x402. It names the endpoints
- * that carry an input schema, because a directory cannot index one without it.
+ * that carry a Bazaar listing (pricing.js discoveryFor), because a directory
+ * cannot index one without it. Every priced endpoint carries one.
  */
 export function wellKnownX402() {
   return {
     version: 1,
-    resources: API_ENDPOINTS.filter((endpoint) => endpoint.discovery).map((endpoint) => `${ORIGIN}${endpoint.path}`),
+    resources: API_ENDPOINTS.filter((endpoint) => discoveryFor(endpoint)).map((endpoint) => `${ORIGIN}${endpoint.path}`),
   };
 }

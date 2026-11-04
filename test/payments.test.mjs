@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
 import { TestD1 } from './d1-shim.mjs';
+import { SOURCE, FEED } from './fixtures/test-regulator.mjs';
 import worker from '../src/index.js';
 import {
   handleMcp,
@@ -30,28 +31,6 @@ const root = join(here, '..');
 const NOW = Date.UTC(2026, 10, 1, 15, 0, 0);
 const PAY_TO = '0x' + '7a'.repeat(20);
 const ALLOWANCE_KEY = 'k'.repeat(64);
-
-const SOURCE = {
-  id: 'test-reg-news',
-  regulator: 'TESTREG',
-  jurisdiction: 'CA',
-  name: 'News',
-  feedUrl: 'https://example.test/feed.xml',
-  homepage: 'https://example.test/',
-  category: 'news',
-  enabled: true,
-  verified: true,
-};
-
-const FEED = `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
-  <item>
-    <title>Consultation on capital adequacy</title>
-    <link>https://example.test/news/car</link>
-    <description>A 90 day consultation opens today.</description>
-    <pubDate>Tue, 21 Jul 2026 14:00:00 GMT</pubDate>
-    <guid>car-2026</guid>
-  </item>
-</channel></rss>`;
 
 async function seededDb() {
   const db = new TestD1();
@@ -183,6 +162,26 @@ function paymentFor(challenge, { nonce = '22' } = {}) {
     },
   };
 }
+
+/**
+ * A value as text without its x402 Bazaar listing (extensions). The listing is the same static example for
+ * every caller (src/bazaar-examples.json), built from the same test regulator these tests ingest, so leak
+ * checks read everything else. test/agent-revenue.test.mjs holds the listing to that: it never changes with
+ * what the caller asked.
+ */
+const visible = (value) =>
+  JSON.stringify(value, function strip(key, v) {
+    if (key === 'extensions') return undefined;
+    // An MCP payment required result repeats the price as JSON text in its first content block.
+    if (typeof v === 'string' && v.startsWith('{') && v.includes('"x402Version"')) {
+      try {
+        return JSON.parse(JSON.stringify(JSON.parse(v), strip));
+      } catch {
+        return v;
+      }
+    }
+    return v;
+  });
 
 // ---------------------------------------------------------------- off
 
@@ -391,7 +390,7 @@ test('a paid call is verified, answered, settled, then released with the receipt
 
   assert.equal(facilitator.seen.verify.length, 1);
   assert.equal(facilitator.seen.settle.length, 1);
-  const sent = JSON.stringify(facilitator.seen.verify[0].payload);
+  const sent = visible(facilitator.seen.verify[0].payload);
   assert.ok(!sent.includes('capital'), 'the facilitator never sees the query');
   assert.equal(facilitator.seen.settle[0].requirements.amount, '10000');
 
@@ -434,7 +433,7 @@ test('a payment the facilitator refuses gets the price again, and the tool never
   );
   assert.equal(json.result.isError, true);
   assert.equal(json.result.structuredContent.error, 'insufficient_funds');
-  assert.ok(!JSON.stringify(json).includes('capital adequacy'), 'no answer without payment');
+  assert.ok(!visible(json).includes('capital adequacy'), 'no answer without payment');
   assert.equal(facilitator.seen.settle.length, 0);
 });
 
@@ -450,7 +449,7 @@ test('a settlement that fails releases no answer', async () => {
     { facilitator: fakeFacilitator({ settles: false }) }
   );
   assert.equal(json.result.isError, true);
-  assert.ok(!JSON.stringify(json).includes('capital adequacy'));
+  assert.ok(!visible(json).includes('capital adequacy'));
 });
 
 test('a metered call inside a batch is refused while the tier is on; other batches pass', async () => {
@@ -482,10 +481,10 @@ test('a tool call a lenient reader might still run is refused, not answered free
     params: { name: 'search_regulatory_changes', arguments: { query: 'capital' } },
   });
   assert.ok(odd.json.error, 'refused with a JSON-RPC error');
-  assert.ok(!JSON.stringify(odd.json).includes('capital adequacy'));
+  assert.ok(!visible(odd.json).includes('capital adequacy'));
 
   const folded = await send(env, toolCall('SEARCH_regulatory_changes', { query: 'capital' }));
-  assert.ok(!JSON.stringify(folded.json).includes('capital adequacy'), 'a case variant is metered too');
+  assert.ok(!visible(folded.json).includes('capital adequacy'), 'a case variant is metered too');
 });
 
 test('a count that cannot be kept answers free rather than refusing', async () => {
@@ -696,7 +695,7 @@ test('a payment that stays valid longer than an hour is refused before anything 
   assert.equal(json.result.structuredContent.error, 'invalid_exact_evm_payload_authorization_valid_before');
   assert.deepEqual(JSON.parse(json.result.content[0].text), json.result.structuredContent);
   assert.equal(facilitator.seen.verify.length, 0);
-  assert.ok(!JSON.stringify(json).includes('capital adequacy'));
+  assert.ok(!visible(json).includes('capital adequacy'));
 });
 
 test('a claim is a keyed hash, which cannot be matched to the transfer without the key', async () => {

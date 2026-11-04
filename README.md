@@ -42,6 +42,8 @@ The Worker also answers on `https://dap-bellwether.dap-solutions.workers.dev/mcp
 
 All four are read-only. There is no write surface.
 
+Each tool's description, which is what an agent reads before it calls, opens with when to use the tool, then says what it does, then the price, in under 300 characters, for example: "Use when you have a record id and need to know whether the publication was amended and what changed. Returns the record in full with every revision observed since first collection. Free for 50 calls per caller each UTC day, then $0.01 USDC on Base per call via x402." The lines live in `src/descriptions.js`, which the tool list, the price list and the OpenAPI file all read; what an agent needs to build a call is in each tool's input schema.
+
 ### Price
 
 Free for people: 50 calls a day from any one address to the three data tools, reset at 00:00 UTC. An IPv6 caller is counted per /64, and every /64 in a /48 also shares a ceiling of ten allowances, so a larger block cannot be rotated into free calls. Only answered calls count. `list_coverage`, `initialize` and `tools/list` are always free.
@@ -62,6 +64,8 @@ The same records as JSON over HTTPS GET, for agents and systems that do not spea
 | `GET /api/coverage` | Free |
 
 There is no free allowance on the API: people use the connector, and an agent calling an API can pay. That is also what lets x402 directories such as Coinbase's Bazaar list it, since they index an endpoint by calling it and expecting the price. A request with an unknown parameter or a bad value is refused with 400 before any payment is asked for. A record that does not exist answers 404 and is never charged. `since` and `until` are compared as UTC times: a year, a month or a date alone covers that whole period, a time may use `T` or a space, and a time without a zone is UTC. A date the regulator did not publish is `null`, never our collection time. The record id is a query parameter so it never reaches the payment facilitator, which sees the path only.
+
+Every priced endpoint's 402, and every payment required result from a data tool on `/mcp`, carries an x402 Bazaar listing: an example call that the endpoint answers with the price, its parameters field by field (as strings on the API, with what is required, the values an enum takes, integers as digits), and an example answer with a small schema, so a directory can list the call and an agent can build a valid one before it pays. `/.well-known/x402` names all three priced endpoints. The listing is the same for every caller and holds nothing a caller sent. The examples are in `src/bazaar-examples.json`, written by `npm run build:bazaar`, which runs the real ingest, API and tools over records in the test D1 database and cuts each answer to its first record; the file says where its records came from and when. The copy here was built from the test regulator the tests use, a made up source at example.test. To list real publications instead, run `npm run build:bazaar -- --feeds` on a machine that can reach the regulators, then `npm test`, before deploying.
 
 ### Institutional licences
 
@@ -121,7 +125,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 144 tests, no network required (Node 22.5 or later)
+npm test                     # 173 tests, no network required (Node 22.5 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -178,6 +182,10 @@ Usage, with no caller attached:
 npx wrangler d1 execute bellwether --remote --command "SELECT * FROM tool_usage_daily ORDER BY day DESC, calls DESC"
 ```
 
+Each answered call on `/api` and each answered `tools/call` on `/mcp` also writes one Workers Analytics Engine data point to the dataset `dap_agent_calls` (binding `AGENT_CALLS`, `src/agent-events.js`), in the layout the Foundry edge and the Compute Market Tracker write, so one weekly report sums all three (dap-solutions-site, `workers/agent-report`): the tool, the outcome (paid, licensed, free, challenged, refused or error), the amount, the status, the network and, for a paid call, a one way hash of the paying wallet. Never the query, an address or a key.
+
+Mutation tests on the payment and analytics branches: `node scripts/mutants/run.mjs` runs each mutant in `scripts/mutants/` against a passing copy and writes `scripts/mutants/REPORT.md`; every one must Deny.
+
 ### Issuing licences
 
 Run on the Mac signed in to Cloudflare, from the repo root. The licence database is created once with `npx wrangler d1 create dap-licences`, its id goes in `wrangler.toml` here and in `workers/compute-agent/wrangler.toml` in dap-solutions-site, and `npm run db:migrate:licences` adds its two tables (it is safe to run again).
@@ -216,7 +224,7 @@ The connector keeps no accounts for people and no email addresses. This page cou
 
 This section is kept word for word in step with the privacy section rendered on the landing page, from `PRIVACY` in `src/landing.js`. A test fails if they differ. Change one and change the other.
 
-- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.
+- **What is stored.** Regulatory publications retrieved from public regulator websites: title, link, summary, publication date and revision history. A daily total of calls per tool, with no caller attached, so we know what the service is used for. Each answered call also adds one record to Cloudflare Workers Analytics Engine: the tool, the outcome, the amount paid, the time and, for a paid call, a one way hash of the paying wallet. It never holds the query, the network address, the wallet address or the licence key. While the paid tier is on, the allowance counts and payment claims described below. For a licensed institution, its licence record and daily counts, also described below. Nothing else a user sends is written to the database.
 - **What is received.** Tool calls arrive as search parameters, for example a keyword or jurisdiction. These are used to answer the request and are not stored, logged to durable storage, or associated with any identity. A paid call also carries an x402 payment authorization, a signed USDC transfer from the caller's wallet. It is passed to the payment facilitator and not stored here. A licensed call carries the institution's key, which is checked against a stored hash and not stored itself.
 - **Allowance counts.** While the paid tier is on, the service counts calls to the three data tools per caller per UTC day, to meter the free allowance. The caller is recorded only as a keyed hash of its network address, bound to the day and never stored with the query. For IPv6 the count is kept for the /64 and for the /48 it sits in. Without the key, which only the service holds, a hash cannot be turned back into an address. Counts are deleted by the first scheduled run after the day ends, normally at 00:00 UTC. The Price section says whether the paid tier is on.
 - **Payment claims.** For each paid call, a keyed hash of its payment authorization is kept so one payment cannot buy two answers. A payment may stay valid for at most an hour, and its claim is deleted by the first scheduled run after it expires, so within a day. It holds no query, and without the service's key it cannot be matched to the transfer.

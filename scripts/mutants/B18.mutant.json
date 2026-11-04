@@ -1,0 +1,11 @@
+{
+  "id": "B18",
+  "description": "a free API call with the paid tier off recorded as refused",
+  "edits": [
+    {
+      "file": "src/api.js",
+      "find": "return answered(await answer(endpoint, params, env), { free: true });",
+      "replace": "return answered(await answer(endpoint, params, env));"
+    }
+  ]
+}

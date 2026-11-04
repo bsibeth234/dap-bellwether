@@ -1,0 +1,11 @@
+{
+  "id": "B19",
+  "description": "a free MCP call the tool refused recorded as free",
+  "edits": [
+    {
+      "file": "src/payments.js",
+      "find": "meter: no ? 'not_charged' : meter",
+      "replace": "meter"
+    }
+  ]
+}

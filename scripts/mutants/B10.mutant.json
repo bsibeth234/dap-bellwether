@@ -1,0 +1,11 @@
+{
+  "id": "B10",
+  "description": "the paying wallet written to analytics as it is",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "    payer: s ? payerHash(s.payer) : '',",
+      "replace": "    payer: s ? String(s.payer || '') : '',"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "B16",
+  "description": "the payer hashed without the shared prefix, so no surface can match it",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "update(`dap-payer-v1|${address.toLowerCase()}`)",
+      "replace": "update(address.toLowerCase())"
+    }
+  ]
+}

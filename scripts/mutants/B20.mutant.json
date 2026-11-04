@@ -1,0 +1,11 @@
+{
+  "id": "B20",
+  "description": "the challenge past the allowance not recorded on MCP",
+  "edits": [
+    {
+      "file": "src/payments.js",
+      "find": "  track(env, ctx, call.tool, 'challenged', challenge);\n",
+      "replace": ""
+    }
+  ]
+}

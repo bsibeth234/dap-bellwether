@@ -1,0 +1,11 @@
+{
+  "id": "B11",
+  "description": "revenue counted on a refused API call",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "    amount: s ? Number(s.amount || 0) : 0,\n    status: response.status,\n  });\n}",
+      "replace": "    amount: Number((s && s.amount) || 10000),\n    status: response.status,\n  });\n}"
+    }
+  ]
+}

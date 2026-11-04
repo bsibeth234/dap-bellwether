@@ -11,7 +11,9 @@
  *
  * With the paid tier off, every call is free and nothing is counted per caller.
  * In both states a daily total per tool, with no caller attached, is kept so
- * we know what the service is actually used for.
+ * we know what the service is actually used for, and each answered tools/call
+ * adds one Workers Analytics Engine data point (agent-events.js): the tool, the
+ * outcome, a hash of the paying wallet and the amount, never the arguments.
  *
  * The caller is the network address the request came from, IPv6 taken to its
  * /64 because one host usually holds a whole /64, with a shared ceiling across
@@ -28,6 +30,7 @@ import { handleMcpRequest, isAllowedOrigin } from './mcp.js';
 import { METERED_TOOLS, NETWORK_ALLOWANCE_MULTIPLE, pricingFor } from './pricing.js';
 import { TOOLS } from './tools.js';
 import { countLicensedCall, countLicensedCalls, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
+import { recordMcpCall } from './agent-events.js';
 
 /** Largest request body read. MCP messages here are a few hundred bytes. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -195,6 +198,21 @@ export async function purgeAllowanceCounts(db, nowMs) {
   return (result && result.meta && result.meta.changes) || 0;
 }
 
+/**
+ * One analytics data point for an answered tools/call (agent-events.js). A side record, like usage: it
+ * never delays or breaks an answer. A free call the tool refused is recorded as refused, read from a copy
+ * of the reply off the answer's path.
+ */
+function track(env, ctx, tool, meter, response) {
+  if (!tool || !env || !env.AGENT_CALLS) return;
+  const job = (
+    meter === 'unmetered'
+      ? failed(response).then((no) => recordMcpCall(env, { tool, meter: no ? 'not_charged' : meter, response }))
+      : recordMcpCall(env, { tool, meter, response })
+  ).catch(() => undefined);
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
+}
+
 /** Usage is a side record. It never delays or breaks an answer. */
 function noteUsage(env, ctx, day, tool, outcome) {
   if (!tool || !env || !env.DB) return;
@@ -354,14 +372,18 @@ export async function handleMcp(request, env, ctx, overrides) {
       );
     }
     for (const c of calls) if (c.kind === 'free' || c.kind === 'metered') noteUsage(env, ctx, day, c.tool, 'unmetered');
-    return forward();
+    const response = await forward();
+    for (const [i, c] of calls.entries()) if ((c.kind === 'free' || c.kind === 'metered') && expectsAnswer(message[i])) track(env, ctx, c.tool, 'unmetered', response);
+    return response;
   }
 
   const call = classify(message);
   if (call.kind === 'other') return forward();
   if (!on || call.kind === 'free') {
     noteUsage(env, ctx, day, call.tool, 'unmetered');
-    return forward();
+    const response = await forward();
+    if (expectsAnswer(message)) track(env, ctx, call.tool, 'unmetered', response);
+    return response;
   }
 
   const gated = () =>
@@ -380,7 +402,9 @@ export async function handleMcp(request, env, ctx, overrides) {
     // still be presented again.
     if (outlivesClaim(message, now())) {
       noteUsage(env, ctx, day, call.tool, 'challenged');
-      return withError(await gatedWithoutPayment(request, message, pricing, env), VALID_BEFORE_ERROR);
+      const refused = await withError(await gatedWithoutPayment(request, message, pricing, env), VALID_BEFORE_ERROR);
+      track(env, ctx, call.tool, 'challenged', refused);
+      return refused;
     }
     let response;
     try {
@@ -389,9 +413,13 @@ export async function handleMcp(request, env, ctx, overrides) {
       // Only the claim can throw here (claims.js swallows a failed release),
       // and it is taken before verification: nothing ran and nothing was charged.
       console.error(`Bellwether payment claim failed: ${err && err.message ? err.message : String(err)}`);
-      return rpcError(message.id, -32603, 'Payment service unavailable. Retry shortly.', 503);
+      const unavailable = rpcError(message.id, -32603, 'Payment service unavailable. Retry shortly.', 503);
+      track(env, ctx, call.tool, 'not_charged', unavailable);
+      return unavailable;
     }
-    noteUsage(env, ctx, day, call.tool, await paidOutcome(response));
+    const outcome = await paidOutcome(response);
+    noteUsage(env, ctx, day, call.tool, outcome);
+    track(env, ctx, call.tool, outcome, response);
     return response;
   }
 
@@ -407,7 +435,9 @@ export async function handleMcp(request, env, ctx, overrides) {
     // shows the store as missing (paymentStoreReady).
     console.error(`Bellwether allowance count failed: ${err && err.message ? err.message : String(err)}`);
     noteUsage(env, ctx, day, call.tool, 'allowance');
-    return forward();
+    const response = await forward();
+    track(env, ctx, call.tool, 'unmetered', response);
+    return response;
   }
 
   // Counts hold answered calls only. A call that fails, and a call that is
@@ -423,15 +453,19 @@ export async function handleMcp(request, env, ctx, overrides) {
     if (await failed(response)) {
       await giveBack();
       noteUsage(env, ctx, day, call.tool, 'not_charged');
+      track(env, ctx, call.tool, 'not_charged', response);
     } else {
       noteUsage(env, ctx, day, call.tool, 'allowance');
+      track(env, ctx, call.tool, 'allowance', response);
     }
     return response;
   }
 
   await giveBack();
   noteUsage(env, ctx, day, call.tool, 'challenged');
-  return explainAllowance(await gated(), pricing, now());
+  const challenge = await explainAllowance(await gated(), pricing, now());
+  track(env, ctx, call.tool, 'challenged', challenge);
+  return challenge;
 }
 
 /**
@@ -464,6 +498,7 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
       .map((m, i) => ({ id: m && m.id, tool: calls[i].tool, kind: calls[i].kind }))
       .filter((c) => c.kind === 'metered' && c.id !== undefined && c.id !== null);
     const response = await send(message.map(withoutPayment));
+    for (const [i, c] of calls.entries()) if (c.kind === 'free' && expectsAnswer(message[i])) track(env, ctx, c.tool, 'unmetered', response);
     if (metered.length === 0) return response;
     let replies = [];
     try {
@@ -480,7 +515,11 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
     if (!(await countLicensedCalls(env.LICENCES, day, licence.id, answered.map((c) => c.tool)))) {
       return licenceUnavailable({ jsonRpc: true });
     }
-    for (const call of answered) noteUsage(env, ctx, day, call.tool, 'licensed');
+    for (const call of answered) {
+      noteUsage(env, ctx, day, call.tool, 'licensed');
+      track(env, ctx, call.tool, 'licensed', response);
+    }
+    for (const call of metered) if (!answered.includes(call)) track(env, ctx, call.tool, 'not_charged', response);
     return response;
   }
 
@@ -489,7 +528,9 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
   if (call.kind === 'malformed') return rpcError(isRpcId(message.id) ? message.id : null, -32600, 'Invalid tools/call request', 400);
   if (call.kind === 'free') {
     noteUsage(env, ctx, day, call.tool, 'unmetered');
-    return send(message);
+    const response = await send(message);
+    if (expectsAnswer(message)) track(env, ctx, call.tool, 'unmetered', response);
+    return response;
   }
 
   const clean = withoutPayment(message);
@@ -498,16 +539,27 @@ async function licensedCall(request, message, env, ctx, day, licence, on) {
   const response = await send(clean);
   if (await failed(response)) {
     noteUsage(env, ctx, day, call.tool, 'not_charged');
+    track(env, ctx, call.tool, 'not_charged', response);
     return response;
   }
   // Every licensed answer is counted before it is released, or not released.
-  if (!(await countLicensedCall(env.LICENCES, day, licence.id, call.tool))) return licenceUnavailable({ jsonRpc: true });
+  if (!(await countLicensedCall(env.LICENCES, day, licence.id, call.tool))) {
+    const unavailable = licenceUnavailable({ jsonRpc: true });
+    track(env, ctx, call.tool, 'not_charged', unavailable);
+    return unavailable;
+  }
   noteUsage(env, ctx, day, call.tool, 'licensed');
+  track(env, ctx, call.tool, 'licensed', response);
   return response;
 }
 
 function isRpcId(id) {
   return typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
+}
+
+/** Whether a message gets an answer: a notification, with no id or a null one, does not. */
+function expectsAnswer(message) {
+  return isObject(message) && message.id !== undefined && message.id !== null;
 }
 
 /**

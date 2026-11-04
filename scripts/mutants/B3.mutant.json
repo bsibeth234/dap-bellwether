@@ -1,0 +1,11 @@
+{
+  "id": "B3",
+  "description": "the Bazaar input schema dropped from every priced API route",
+  "edits": [
+    {
+      "file": "src/pricing.js",
+      "find": "    inputSchema: querySchemaOf(endpoint.tool),\n",
+      "replace": ""
+    }
+  ]
+}

@@ -2,32 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { TestD1 } from './d1-shim.mjs';
+import { SOURCE, FEED } from './fixtures/test-regulator.mjs';
 import { handleMcpRequest, isAllowedOrigin, prefersHtml } from '../src/mcp.js';
 import { TOOLS } from '../src/tools.js';
 import { SETUP_STEPS } from '../src/landing.js';
 import { runIngest } from '../src/ingest.js';
-
-const SOURCE = {
-  id: 'test-reg-news',
-  regulator: 'TESTREG',
-  jurisdiction: 'CA',
-  name: 'News',
-  feedUrl: 'https://example.test/feed.xml',
-  homepage: 'https://example.test/',
-  category: 'news',
-  enabled: true,
-  verified: true,
-};
-
-const FEED = `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
-  <item>
-    <title>Consultation on capital adequacy</title>
-    <link>https://example.test/news/car</link>
-    <description>A 90 day consultation opens today.</description>
-    <pubDate>Tue, 21 Jul 2026 14:00:00 GMT</pubDate>
-    <guid>car-2026</guid>
-  </item>
-</channel></rss>`;
 
 async function seededEnv() {
   const db = new TestD1();

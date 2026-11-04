@@ -1,0 +1,11 @@
+{
+  "id": "B8",
+  "description": "an example call the endpoint refuses with 400 instead of pricing",
+  "edits": [
+    {
+      "file": "src/bazaar-examples.json",
+      "find": "\"days\": \"365\",",
+      "replace": "\"days\": \"0\","
+    }
+  ]
+}
