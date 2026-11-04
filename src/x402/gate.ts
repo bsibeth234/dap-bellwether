@@ -57,7 +57,16 @@ export interface RouteConfig {
   /** Response MIME type. Default application/json. */
   mimeType?: string;
   /** Example call and answer, published through the x402 Bazaar extension so agent directories can list the tool. */
-  discovery?: { input: HttpExample; output?: { type: string; example?: unknown } };
+  discovery?: {
+    input: HttpExample;
+    /**
+     * JSON Schema properties of the query (GET) or the JSON body (POST), and which are required. The example
+     * input must validate against it: the facilitator refuses a listing whose example does not.
+     */
+    inputSchema?: { properties: Record<string, unknown>; required?: readonly string[] };
+    /** The answer: its type, an example, and a JSON Schema for the example. */
+    output?: { type: string; example?: unknown; schema?: Record<string, unknown> };
+  };
 }
 
 export type X402Event =
@@ -490,8 +499,9 @@ function mergeList(headers: Headers, name: string, values: readonly string[]): v
 
 /** x402 Bazaar discovery extension (specs/extensions/bazaar.md): `info` plus a JSON Schema for it. */
 function bazaarExtension(discovery: NonNullable<RouteConfig["discovery"]>): BazaarExtension {
-  const { input, output } = discovery;
+  const { input, output, inputSchema: declared } = discovery;
   const isBody = input.method === "POST";
+  const { schema: outputSchema, ...outputInfo } = output ?? { type: "json" };
   const info = {
     input: {
       type: "http",
@@ -499,16 +509,26 @@ function bazaarExtension(discovery: NonNullable<RouteConfig["discovery"]>): Baza
       ...(input.queryParams ? { queryParams: input.queryParams } : {}),
       ...(isBody ? { bodyType: "json", body: input.body ?? {} } : {}),
     },
-    ...(output ? { output } : {}),
+    ...(output ? { output: outputInfo } : {}),
   };
+  // With a declared schema, the query or body is described field by field, so an agent can build a valid
+  // call before it pays. Without one, the listing stays as it was: any string query, any object body.
+  const fields = declared
+    ? {
+        type: "object",
+        properties: declared.properties,
+        ...(declared.required && declared.required.length ? { required: [...declared.required] } : {}),
+        additionalProperties: false,
+      }
+    : undefined;
   const inputSchema = {
     type: "object",
     properties: {
       type: { type: "string", const: "http" },
       method: { type: "string", enum: isBody ? ["POST", "PUT", "PATCH"] : ["GET", "HEAD", "DELETE"] },
       ...(isBody ? { bodyType: { type: "string", enum: ["json", "form-data", "text"] } } : {}),
-      ...(isBody ? { body: { type: "object" } } : {}),
-      queryParams: { type: "object", additionalProperties: { type: "string" } },
+      ...(isBody ? { body: fields ?? { type: "object" } } : {}),
+      queryParams: !isBody && fields ? fields : { type: "object", additionalProperties: { type: "string" } },
       headers: { type: "object", additionalProperties: { type: "string" } },
     },
     required: isBody ? ["type", "method", "bodyType", "body"] : ["type", "method"],
@@ -521,7 +541,14 @@ function bazaarExtension(discovery: NonNullable<RouteConfig["discovery"]>): Baza
       type: "object",
       properties: {
         input: inputSchema,
-        output: { type: "object", properties: { type: { type: "string" } }, required: ["type"] },
+        output: {
+          type: "object",
+          properties: {
+            type: { type: "string" },
+            ...(output && "example" in output && output.example !== undefined ? { example: outputSchema ?? {} } : {}),
+          },
+          required: ["type"],
+        },
       },
       required: ["input"],
     },

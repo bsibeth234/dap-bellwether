@@ -14,6 +14,7 @@
     "build:favicon": "node scripts/build-favicon-ico.mjs",
     "build:og": "node scripts/build-og-card.mjs",
     "build:assets": "node scripts/build-assets.mjs",
+    "build:bazaar": "node --disable-warning=ExperimentalWarning --import ./test/register-ts.mjs scripts/bazaar-examples.mjs",
     "dev": "wrangler dev",
     "db:create": "wrangler d1 create bellwether",
     "db:migrate": "wrangler d1 execute bellwether --file=./schema.sql --remote",
@@ -28,6 +29,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "ajv": "8.17.1",
     "esbuild": "0.28.1",
     "wrangler": "^4.0.0"
   }

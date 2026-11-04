@@ -1,0 +1,11 @@
+{
+  "id": "B15",
+  "description": "a paid MCP call not recorded in analytics",
+  "edits": [
+    {
+      "file": "src/payments.js",
+      "find": "    noteUsage(env, ctx, day, call.tool, outcome);\n    track(env, ctx, call.tool, outcome, response);\n",
+      "replace": "    noteUsage(env, ctx, day, call.tool, outcome);\n"
+    }
+  ]
+}

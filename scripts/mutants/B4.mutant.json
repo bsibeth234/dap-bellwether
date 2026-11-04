@@ -1,0 +1,11 @@
+{
+  "id": "B4",
+  "description": "the MCP example arguments dropped from every metered tool",
+  "edits": [
+    {
+      "file": "src/pricing.js",
+      "find": "...(example ? { example: example.arguments, output: { example: example.answer, schema: TOOL_ANSWER_SCHEMA } } : {}),",
+      "replace": "...(example ? { output: { example: example.answer, schema: TOOL_ANSWER_SCHEMA } } : {}),"
+    }
+  ]
+}

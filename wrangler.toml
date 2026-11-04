@@ -40,6 +40,17 @@ binding = "LICENCES"
 database_name = "dap-licences"
 database_id = "e22f1525-8bf3-43f1-a6da-89ca00a475bc"
 
+# One Workers Analytics Engine data point per answered call on /api and on MCP
+# tools/call (src/agent-events.js): the tool, the outcome, the amount paid, the
+# status and, for a paid call, a one way hash of the paying wallet. Never the
+# query, the network address, the wallet address or a licence key. The same
+# dataset as the Foundry edge and the Compute Market Tracker, so one weekly
+# report sums all three (dap-solutions-site, workers/agent-report). Without
+# the binding nothing is written and every answer is unchanged.
+[[analytics_engine_datasets]]
+binding = "AGENT_CALLS"
+dataset = "dap_agent_calls"
+
 [observability]
 enabled = true
 

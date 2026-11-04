@@ -12,11 +12,16 @@
 
 import { JURISDICTIONS, SOURCES, enabledSources } from './sources.js';
 import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun } from './db.js';
+import { describe } from './descriptions.js';
 
 export const JURISDICTION_CODES = Object.keys(JURISDICTIONS);
 export const CATEGORIES = ['rules', 'enforcement', 'guidance', 'news'];
 
-const DATE_INPUT =
+/** A record id, as the store writes it (db.js changeId). */
+export const RECORD_ID = /^[0-9a-f]{32}$/;
+
+/** A since or until bound: a year, a month, a date, or a time with an optional zone (dateBound). */
+export const DATE_INPUT =
   /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:[Tt ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?\s*([Zz]|[+-]\d{2}:?\d{2})?)?)?)?$/;
 
 /**
@@ -71,14 +76,14 @@ export const TOOLS = [
   {
     name: 'search_regulatory_changes',
     title: 'Search regulatory changes',
-    description:
-      'Search regulatory publications collected from financial regulators in Canada, the United States, the United Kingdom and the European Union. Use for questions about what a regulator has published on a topic, or what has changed in a date range. Returns the most recent matches first.',
+    description: describe('search_regulatory_changes'),
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Keywords matched against title and summary, for example "liquidity" or "crypto-asset".',
+          description:
+            'Keywords matched against title and summary, for example "liquidity" or "crypto-asset". Leave out to filter by the other fields alone.',
         },
         jurisdiction: {
           type: 'string',
@@ -96,18 +101,20 @@ export const TOOLS = [
         },
         since: {
           type: 'string',
-          description: 'ISO 8601 date or timestamp. Only items published on or after this.',
+          description:
+            'ISO 8601 date or timestamp, compared in UTC. Only items published on or after this. A year, month or date alone starts at the beginning of that period; a time without a zone is UTC.',
         },
         until: {
           type: 'string',
-          description: 'ISO 8601 date or timestamp. Only items published on or before this.',
+          description:
+            'ISO 8601 date or timestamp, compared in UTC. Only items published on or before this. A year, month or date alone runs to the end of that period; a time without a zone is UTC.',
         },
         limit: {
           type: 'integer',
           minimum: 1,
           maximum: 100,
           default: 20,
-          description: 'Maximum records to return.',
+          description: 'Maximum records to return, most recent first.',
         },
       },
       additionalProperties: false,
@@ -117,8 +124,7 @@ export const TOOLS = [
   {
     name: 'recent_regulatory_changes',
     title: 'Recent regulatory changes',
-    description:
-      'List the most recent regulatory publications across all covered regulators, newest first. Use when asked what is new, what happened this week, or for a general catch up rather than a specific topic.',
+    description: describe('recent_regulatory_changes'),
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,9 +134,9 @@ export const TOOLS = [
           minimum: 1,
           maximum: 365,
           default: 14,
-          description: 'Look back this many days.',
+          description: 'Look back this many days, for example 7 for what happened this week.',
         },
-        limit: { type: 'integer', minimum: 1, maximum: 100, default: 25, description: 'Maximum records to return.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 25, description: 'Maximum records to return, newest first.' },
       },
       additionalProperties: false,
     },
@@ -139,12 +145,15 @@ export const TOOLS = [
   {
     name: 'get_regulatory_change',
     title: 'Get a regulatory change with its revision history',
-    description:
-      'Retrieve one record in full, including every revision observed since it was first seen. Use this to answer whether a document was amended after publication and what moved. The id comes from a search or recent result.',
+    description: describe('get_regulatory_change'),
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Record id from a search or recent result.' },
+        id: {
+          type: 'string',
+          description:
+            'Record id from a search or recent result, 32 lower case hexadecimal characters. The answer shows each revision oldest first, so an amendment after publication and what moved are both visible.',
+        },
       },
       required: ['id'],
       additionalProperties: false,
@@ -158,8 +167,7 @@ export const TOOLS = [
   {
     name: 'list_coverage',
     title: 'List regulators and coverage status',
-    description:
-      'List every regulator and feed being monitored, with when each was last collected successfully and how fresh the data is. Use to answer what this connector covers, or to check whether a jurisdiction is being watched before relying on an absence of results.',
+    description: describe('list_coverage'),
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { title: 'List regulators and coverage status', readOnlyHint: true, openWorldHint: false },
   },

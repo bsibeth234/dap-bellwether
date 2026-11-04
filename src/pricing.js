@@ -22,8 +22,10 @@
 import { gateFromEnv } from './x402/env.ts';
 import { createGate } from './x402/gate.ts';
 import { usdcFor } from './x402/networks.ts';
-import { TOOLS } from './tools.js';
+import { DATE_INPUT, RECORD_ID, TOOLS } from './tools.js';
 import { d1ReplayGuard } from './claims.js';
+import { describeApi } from './descriptions.js';
+import EXAMPLES from './bazaar-examples.json' with { type: 'json' };
 
 /** The tools the allowance counts. Everything else is free. */
 export const METERED_TOOLS = Object.freeze([
@@ -55,21 +57,41 @@ const SERVICE = {
   iconUrl: 'https://bellwether.dap.solutions/icons/favicon-192.png',
 };
 
-/** One line each, which is what an agent reads to decide whether to buy. */
-const DESCRIPTIONS = {
-  search_regulatory_changes:
-    'Search publications from financial regulators in Canada, the US, the UK and the EU.',
-  recent_regulatory_changes:
-    'The newest publications from financial regulators in Canada, the US, the UK and the EU.',
-  get_regulatory_change: 'One regulatory publication in full, with every revision observed.',
+/**
+ * What a tool answers, as far as an agent needs it to read the example: an MCP result whose first block
+ * is the text a person or a model reads.
+ */
+const TOOL_ANSWER_SCHEMA = {
+  type: 'object',
+  properties: {
+    content: {
+      type: 'array',
+      minItems: 1,
+      items: { type: 'object', properties: { type: { const: 'text' }, text: { type: 'string' } }, required: ['type', 'text'] },
+    },
+  },
+  required: ['content'],
 };
 
+/**
+ * Each metered tool's price: its own description (descriptions.js, through tools.js), its input schema,
+ * and for the Bazaar listing an example call and the tool's answer to it (bazaar-examples.json).
+ */
 function meteredTools() {
   return Object.fromEntries(
     METERED_TOOLS.map((name) => {
       const tool = TOOLS.find((t) => t.name === name);
       if (!tool) throw new Error(`Metered tool ${name} is not in the tool list`);
-      return [name, { price: PRICE, description: DESCRIPTIONS[name], inputSchema: tool.inputSchema }];
+      const example = EXAMPLES.tools[name];
+      return [
+        name,
+        {
+          price: PRICE,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          ...(example ? { example: example.arguments, output: { example: example.answer, schema: TOOL_ANSWER_SCHEMA } } : {}),
+        },
+      ];
     })
   );
 }
@@ -81,33 +103,87 @@ function meteredTools() {
  * endpoint by calling it and expecting the price. /api/coverage is free.
  */
 export const API_ENDPOINTS = Object.freeze([
-  {
-    name: 'search',
-    path: '/api/search',
-    tool: 'search_regulatory_changes',
-    discovery: { input: { method: 'GET', queryParams: { query: 'capital', limit: '5' } }, output: { type: 'json' } },
-  },
-  {
-    name: 'recent',
-    path: '/api/recent',
-    tool: 'recent_regulatory_changes',
-    discovery: { input: { method: 'GET', queryParams: { days: '7', limit: '5' } }, output: { type: 'json' } },
-  },
+  { name: 'search', path: '/api/search', tool: 'search_regulatory_changes' },
+  { name: 'recent', path: '/api/recent', tool: 'recent_regulatory_changes' },
   // The id is a query parameter, not part of the path: the gate sends the
   // path to the payment facilitator and strips the query, so the record a
   // caller asked for never reaches Coinbase.
   { name: 'change', path: '/api/change', tool: 'get_regulatory_change' },
 ]);
 
+/** A record in an API answer, as far as an agent needs it to read the example. */
+const RECORD_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    regulator: { type: 'string' },
+    title: { type: 'string' },
+    url: { type: ['string', 'null'] },
+    published_at: { type: ['string', 'null'] },
+  },
+  required: ['id', 'regulator', 'title', 'published_at'],
+};
+
+/** The answer each priced endpoint returns, small: what the example shows, not every field. */
+const ANSWER_SCHEMAS = {
+  search: { type: 'object', properties: { count: { type: 'integer' }, records: { type: 'array', items: RECORD_SCHEMA } }, required: ['count', 'records'] },
+  change: {
+    type: 'object',
+    properties: { record: RECORD_SCHEMA, revisions: { type: 'array', items: { type: 'object', properties: { revision: { type: 'integer' } }, required: ['revision'] } } },
+    required: ['record', 'revisions'],
+  },
+};
+ANSWER_SCHEMAS.recent = ANSWER_SCHEMAS.search;
+
+/**
+ * A tool's input schema as query parameters: every value travels as a string, field by field, with what
+ * is required, the values an enum allows, integers as digits and their range in words, and the shape of
+ * an id or a date, so an agent can build a call the API takes before it pays.
+ */
+export function querySchemaOf(toolName) {
+  const tool = TOOLS.find((t) => t.name === toolName);
+  if (!tool) throw new Error(`No tool ${toolName}`);
+  const properties = {};
+  for (const [key, p] of Object.entries(tool.inputSchema.properties)) {
+    const out = { type: 'string', description: p.description };
+    if (p.enum) out.enum = [...p.enum];
+    if (p.type === 'integer') {
+      out.pattern = '^[0-9]{1,4}$';
+      out.description = `${p.description} A whole number from ${p.minimum} to ${p.maximum}, default ${p.default}.`;
+    }
+    if (key === 'id') out.pattern = RECORD_ID.source;
+    if (key === 'since' || key === 'until') out.pattern = DATE_INPUT.source;
+    properties[key] = out;
+  }
+  return { properties, required: [...(tool.inputSchema.required || [])] };
+}
+
+/**
+ * The Bazaar listing of a priced endpoint: an example call it answers with the price, its query parameters
+ * field by field, and its own answer to that call (bazaar-examples.json).
+ */
+export function discoveryFor(endpoint) {
+  const example = EXAMPLES.api[endpoint.name];
+  if (!example) return undefined;
+  return {
+    input: { method: 'GET', queryParams: example.query },
+    inputSchema: querySchemaOf(endpoint.tool),
+    output: { type: 'json', example: example.answer, schema: ANSWER_SCHEMAS[endpoint.name] },
+  };
+}
+
 function apiRoutes() {
-  return API_ENDPOINTS.map((endpoint) => ({
-    path: endpoint.path,
-    methods: ['GET'],
-    price: PRICE,
-    description: DESCRIPTIONS[endpoint.tool],
-    mimeType: 'application/json',
-    ...(endpoint.discovery ? { discovery: endpoint.discovery } : {}),
-  }));
+  return API_ENDPOINTS.map((endpoint) => {
+    const discovery = discoveryFor(endpoint);
+    return {
+      path: endpoint.path,
+      methods: ['GET'],
+      price: PRICE,
+      description: describeApi(endpoint.tool),
+      mimeType: 'application/json',
+      ...(discovery ? { discovery } : {}),
+    };
+  });
 }
 
 function readFreeCalls(raw) {

@@ -36,6 +36,13 @@ export interface McpToolPrice {
   description: string;
   /** The tool's input JSON Schema. When given, the price carries a Bazaar listing for the tool. */
   inputSchema?: Record<string, unknown>;
+  /**
+   * Example arguments for the Bazaar listing. The Bazaar sends them as the tool's arguments to check that the
+   * call is priced, so they must be arguments the tool accepts. Ignored without inputSchema.
+   */
+  example?: Record<string, unknown>;
+  /** Example answer and its JSON Schema, for the Bazaar listing. Ignored without inputSchema. */
+  output?: { example?: unknown; schema?: Record<string, unknown> };
 }
 
 export interface McpConfig {
@@ -471,6 +478,8 @@ async function readReply(response: Response, id: RpcId): Promise<Json | undefine
 
 /** Bazaar listing for an MCP tool (specs/extensions/bazaar.md, input type "mcp"). */
 function mcpBazaar(name: string, tool: McpToolPrice): Json {
+  const example = tool.example;
+  const output = tool.output;
   return {
     info: {
       input: {
@@ -478,8 +487,9 @@ function mcpBazaar(name: string, tool: McpToolPrice): Json {
         toolName: name,
         description: tool.description,
         inputSchema: tool.inputSchema ?? {},
+        ...(example ? { example } : {}),
       },
-      output: { type: "json" },
+      output: { type: "json", ...(output?.example !== undefined ? { example: output.example } : {}) },
     },
     schema: {
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -492,10 +502,18 @@ function mcpBazaar(name: string, tool: McpToolPrice): Json {
             toolName: { type: "string" },
             description: { type: "string" },
             inputSchema: { type: "object" },
+            ...(example ? { example: tool.inputSchema ?? { type: "object" } } : {}),
           },
           required: ["type", "toolName", "inputSchema"],
         },
-        output: { type: "object", properties: { type: { type: "string" } }, required: ["type"] },
+        output: {
+          type: "object",
+          properties: {
+            type: { type: "string" },
+            ...(output?.example !== undefined ? { example: output.schema ?? {} } : {}),
+          },
+          required: ["type"],
+        },
       },
       required: ["input"],
     },

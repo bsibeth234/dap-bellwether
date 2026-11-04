@@ -1,0 +1,11 @@
+{
+  "id": "B13",
+  "description": "a licensed API call recorded as paid",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "  if (licensed) return 'licensed';",
+      "replace": "  if (licensed) return 'paid';"
+    }
+  ]
+}

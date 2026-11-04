@@ -1,0 +1,11 @@
+{
+  "id": "B2",
+  "description": "a priced API endpoint described without its price in its 402",
+  "edits": [
+    {
+      "file": "src/descriptions.js",
+      "find": "return `${job.join(' ')} ${API_PRICE}`;",
+      "replace": "return job.join(' ');"
+    }
+  ]
+}

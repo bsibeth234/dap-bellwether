@@ -1,0 +1,11 @@
+{
+  "id": "B17",
+  "description": "the query written into the tool name of an API data point",
+  "edits": [
+    {
+      "file": "src/api.js",
+      "find": "recordHttpCall(env, ctx, { tool: endpoint.name, rail: 'api', response, ...flags });",
+      "replace": "recordHttpCall(env, ctx, { tool: `${endpoint.name}${url.search}`, rail: 'api', response, ...flags });"
+    }
+  ]
+}

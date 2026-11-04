@@ -1,0 +1,11 @@
+{
+  "id": "B12",
+  "description": "a licensed MCP call recorded as paid",
+  "edits": [
+    {
+      "file": "src/agent-events.js",
+      "find": "licensed: 'licensed', challenged:",
+      "replace": "licensed: 'paid', challenged:"
+    }
+  ]
+}

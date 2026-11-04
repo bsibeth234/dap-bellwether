@@ -13,6 +13,10 @@
  *   an x402 payment      verified, answered, settled, then released (the gate)
  * Without either, a priced endpoint answers 402 with the price.
  *
+ * Every GET to a priced endpoint, whatever its answer, adds one Workers
+ * Analytics Engine data point (agent-events.js): the endpoint, the outcome,
+ * a hash of the paying wallet and the amount. Never the query.
+ *
  * Only the gate ever runs a priced answer for a paying caller, and it runs it
  * only after the payment verifies. Which paths are priced is read from the
  * gate's own price list (pricedByGate), so the router here can never answer a
@@ -23,10 +27,11 @@ import { canonicalPath } from './x402/path.ts';
 import { decodeHeader, encodeHeader } from './x402/codec.ts';
 import { searchChanges, getChange, getSourceHealth, countChanges, lastIngestRun } from './db.js';
 import { JURISDICTIONS, SOURCES, enabledSources } from './sources.js';
-import { CATEGORIES, JURISDICTION_CODES, dateBound } from './tools.js';
+import { CATEGORIES, JURISDICTION_CODES, RECORD_ID, dateBound } from './tools.js';
 import { API_ENDPOINTS, pricingFor } from './pricing.js';
 import { countLicensedCall, licenceRefused, licenceUnavailable, readLicence } from './licences.js';
 import { MAX_PAYMENT_VALIDITY_SECONDS, recordUsage, utcDay } from './payments.js';
+import { recordHttpCall } from './agent-events.js';
 
 const NOTICE = 'This is a public information service. It is not legal or compliance advice. Use is under the DAP API terms: https://dap.solutions/terms/api/.';
 const COVERAGE_NOTE =
@@ -119,7 +124,7 @@ export function parseParams(endpoint, searchParams) {
 
   if (endpoint.name === 'change') {
     const id = get('id');
-    if (id === null || !/^[0-9a-f]{32}$/.test(id)) {
+    if (id === null || !RECORD_ID.test(id)) {
       return { error: 'id is required: 32 lower case hexadecimal characters, from a search or recent result.' };
     }
     params.id = id;
@@ -347,27 +352,33 @@ export async function handleApi(request, env, ctx, overrides) {
   }
 
   const tool = `api:${endpoint.name}`;
+  // One analytics data point for each GET to a priced endpoint, as it is answered. A side record: it never
+  // throws or delays (agent-events.js), and it holds the endpoint name, never the query.
+  const answered = (response, flags) => {
+    if (method === 'GET') recordHttpCall(env, ctx, { tool: endpoint.name, rail: 'api', response, ...flags });
+    return response;
+  };
   let params = null;
   if (method === 'GET') {
     const parsed = parseParams(endpoint, url.searchParams);
-    if (parsed.error) return badRequest(parsed.error);
+    if (parsed.error) return answered(badRequest(parsed.error));
     params = parsed.params;
 
     const licence = await readLicence(request, env);
-    if (licence.status === 'invalid') return licenceRefused();
-    if (licence.status === 'unavailable') return licenceUnavailable();
+    if (licence.status === 'invalid') return answered(licenceRefused());
+    if (licence.status === 'unavailable') return answered(licenceUnavailable());
     if (licence.status === 'valid') {
       let response;
       try {
         response = await answer(endpoint, params, env);
       } catch (err) {
-        return unanswerable(err);
+        return answered(unanswerable(err));
       }
-      if (response.status >= 400) return response;
+      if (response.status >= 400) return answered(response, { licensed: true });
       // Every licensed answer is counted before it is released, or not released.
-      if (!(await countLicensedCall(env.LICENCES, day, licence.licence.id, tool))) return licenceUnavailable();
+      if (!(await countLicensedCall(env.LICENCES, day, licence.licence.id, tool))) return answered(licenceUnavailable());
       note(env, ctx, day, tool, 'licensed');
-      return response;
+      return answered(response, { licensed: true });
     }
   }
 
@@ -377,9 +388,9 @@ export async function handleApi(request, env, ctx, overrides) {
     if (method === 'GET') {
       note(env, ctx, day, tool, 'unmetered');
       try {
-        return await answer(endpoint, params, env);
+        return answered(await answer(endpoint, params, env), { free: true });
       } catch (err) {
-        return unanswerable(err);
+        return answered(unanswerable(err));
       }
     }
     if (method === 'OPTIONS') {
@@ -394,13 +405,13 @@ export async function handleApi(request, env, ctx, overrides) {
   // Never answer a priced endpoint the gate would let through unpriced.
   if (!pricedByGate(pricing.gate.routes, canonical)) {
     console.error(`Bellwether API path ${canonical} is not on the gate's price list`);
-    return json({ error: 'not_priced' }, 500);
+    return answered(json({ error: 'not_priced' }, 500));
   }
 
   const signature = request.headers.get('PAYMENT-SIGNATURE');
   if (method === 'GET' && signature !== null && outlivesClaim(signature, now())) {
     note(env, ctx, day, tool, 'challenged');
-    return priceWithError(request, pricing.gate, VALID_BEFORE_ERROR);
+    return answered(await priceWithError(request, pricing.gate, VALID_BEFORE_ERROR));
   }
 
   let response;
@@ -410,8 +421,8 @@ export async function handleApi(request, env, ctx, overrides) {
     // The claim (taken before verification) or the answer threw. The gate
     // releases the claim when the answer throws and settles nothing, so
     // nothing was charged.
-    return unanswerable(err);
+    return answered(unanswerable(err));
   }
   if (method === 'GET') note(env, ctx, day, tool, outcomeOf(response, signature !== null));
-  return response;
+  return answered(response);
 }

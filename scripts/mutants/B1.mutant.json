@@ -1,0 +1,11 @@
+{
+  "id": "B1",
+  "description": "a tool description without its price: the MCP line stops after the job",
+  "edits": [
+    {
+      "file": "src/descriptions.js",
+      "find": "return `${job.join(' ')} ${name === 'list_coverage' ? 'Always free.' : MCP_PRICE}`;",
+      "replace": "return `${job.join(' ')}${name === 'list_coverage' ? ' Always free.' : ''}`;"
+    }
+  ]
+}

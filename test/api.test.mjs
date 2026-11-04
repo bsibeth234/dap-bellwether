@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { TestD1 } from './d1-shim.mjs';
+import { SOURCE, FEED } from './fixtures/test-regulator.mjs';
 import worker from '../src/index.js';
 import { handleApi, pricedByGate, resolveEndpoint, parseParams } from '../src/api.js';
 import { handleMcp } from '../src/payments.js';
@@ -18,27 +19,25 @@ const PAY_TO = '0x' + '7a'.repeat(20);
 const ALLOWANCE_KEY = 'k'.repeat(64);
 const ORIGIN = 'https://bellwether.dap.solutions';
 
-const SOURCE = {
-  id: 'test-reg-news',
-  regulator: 'TESTREG',
-  jurisdiction: 'CA',
-  name: 'News',
-  feedUrl: 'https://example.test/feed.xml',
-  homepage: 'https://example.test/',
-  category: 'news',
-  enabled: true,
-  verified: true,
-};
-
-const FEED = `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
-  <item>
-    <title>Consultation on capital adequacy</title>
-    <link>https://example.test/news/car</link>
-    <description>A 90 day consultation opens today.</description>
-    <pubDate>Tue, 21 Jul 2026 14:00:00 GMT</pubDate>
-    <guid>car-2026</guid>
-  </item>
-</channel></rss>`;
+/**
+ * A value as text without its x402 Bazaar listing (extensions). The listing is the same static example for
+ * every caller (src/bazaar-examples.json), built from the same test regulator these tests ingest, so leak
+ * checks read everything else. test/agent-revenue.test.mjs holds the listing to that: it never changes with
+ * what the caller asked.
+ */
+const visible = (value) =>
+  JSON.stringify(value, function strip(key, v) {
+    if (key === 'extensions') return undefined;
+    // An MCP payment required result repeats the price as JSON text in its first content block.
+    if (typeof v === 'string' && v.startsWith('{') && v.includes('"x402Version"')) {
+      try {
+        return JSON.parse(JSON.stringify(JSON.parse(v), strip));
+      } catch {
+        return v;
+      }
+    }
+    return v;
+  });
 
 /** The dap-licences database, as the LICENCES binding sees it. */
 function licenceDb() {
@@ -259,7 +258,7 @@ test('a paid call is verified, answered as JSON, settled, and the facilitator ne
   assert.equal(receipt.success, true);
   assert.equal(facilitator.seen.verify.length, 1);
   assert.equal(facilitator.seen.settle.length, 1);
-  assert.ok(!JSON.stringify(facilitator.seen.verify[0].payload).includes('adequacy'), 'the query never goes to the facilitator');
+  assert.ok(!visible(facilitator.seen.verify[0].payload).includes('adequacy'), 'the query never goes to the facilitator');
   assert.equal(facilitator.seen.verify[0].payload.resource.url, `${ORIGIN}/api/search`, 'the resource carries no query string');
   assert.match(response.headers.get('access-control-expose-headers') || '', /PAYMENT-RESPONSE/i);
   assert.deepEqual(await usage(db), ['api:search challenged 1', 'api:search paid 1']);
@@ -554,7 +553,7 @@ test('the x402 discovery file names the indexable endpoints, and every paid oper
   assert.equal(doc.paths['/api/coverage'].get['x-payment-info'], undefined);
   assert.deepEqual(wellKnownX402(), {
     version: 1,
-    resources: [`${ORIGIN}/api/search`, `${ORIGIN}/api/recent`],
+    resources: [`${ORIGIN}/api/search`, `${ORIGIN}/api/recent`, `${ORIGIN}/api/change`],
   });
   const served = await worker.fetch(new Request(`${ORIGIN}/.well-known/x402`), { DB: new TestD1() }, context());
   assert.equal(served.status, 200);
@@ -617,7 +616,7 @@ test('the record id never reaches the payment facilitator', async () => {
   const facilitator = fakeFacilitator();
   const paid = await get(env, path, { headers: { 'PAYMENT-SIGNATURE': paymentHeader(first.response, { nonce: '88' }) }, facilitator });
   assert.equal(paid.response.status, 200);
-  const sent = JSON.stringify([facilitator.seen.verify, facilitator.seen.settle]);
+  const sent = visible([facilitator.seen.verify, facilitator.seen.settle]);
   assert.ok(!sent.includes(results[0].id), 'no record id in anything sent to the facilitator');
   assert.equal(facilitator.seen.verify[0].payload.resource.url, `${ORIGIN}/api/change`);
 });

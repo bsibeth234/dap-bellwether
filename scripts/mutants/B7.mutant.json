@@ -1,0 +1,11 @@
+{
+  "id": "B7",
+  "description": "an integer parameter listed as any string, with no digit pattern",
+  "edits": [
+    {
+      "file": "src/pricing.js",
+      "find": "      out.pattern = '^[0-9]{1,4}$';\n",
+      "replace": ""
+    }
+  ]
+}

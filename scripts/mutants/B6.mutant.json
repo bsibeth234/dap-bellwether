@@ -1,0 +1,11 @@
+{
+  "id": "B6",
+  "description": "the allowed values of an enum left out of the query schema",
+  "edits": [
+    {
+      "file": "src/pricing.js",
+      "find": "    if (p.enum) out.enum = [...p.enum];\n",
+      "replace": ""
+    }
+  ]
+}
