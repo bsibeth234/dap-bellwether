@@ -1,7 +1,7 @@
 {
-  "about": "Example calls and answers for the x402 Bazaar listings of the priced API routes and the metered MCP tools. Each answer is the code's own answer to its call, run on 2026-11-04 over the test regulator the tests ingest (test/fixtures/test-regulator.mjs: TESTREG, a made up source at example.test, not a real regulator), then cut to its first record. Written by scripts/bazaar-examples.mjs; never edited by hand.",
-  "source": "the test regulator the tests ingest (test/fixtures/test-regulator.mjs: TESTREG, a made up source at example.test, not a real regulator)",
-  "generated_at": "2026-11-04T12:10:31.229Z",
+  "about": "Example calls and answers for the x402 Bazaar listings of the priced API routes and the metered MCP tools. Each answer is the code's own answer to its call, run on 2026-11-04 over the live feeds of 9 of 9 enabled sources in src/sources.js, collected by src/ingest.js from 2026-11-04T14:51:55.025Z, then cut to its first record. Written by scripts/bazaar-examples.mjs; never edited by hand.",
+  "source": "the live feeds of 9 of 9 enabled sources in src/sources.js, collected by src/ingest.js from 2026-11-04T14:51:55.025Z",
+  "generated_at": "2026-11-04T14:51:58.084Z",
   "api": {
     "search": {
       "query": {
@@ -9,19 +9,19 @@
         "limit": "5"
       },
       "answer": {
-        "count": 1,
+        "count": 5,
         "records": [
           {
-            "id": "bfd29e380e13d7172bfbff961a5b2f8e",
-            "regulator": "TESTREG",
-            "jurisdiction": "CA",
+            "id": "2e4d9d984bbd129e697a14d8b6cd0e71",
+            "regulator": "SEC",
+            "jurisdiction": "US",
             "category": "news",
-            "title": "Consultation on capital adequacy",
-            "summary": "A 90 day consultation opens today.",
-            "url": "https://example.test/news/car",
-            "published_at": "2026-07-21T14:00:00.000Z",
-            "first_collected_at": "2026-11-04T12:10:31.189Z",
-            "last_confirmed_at": "2026-11-04T12:10:31.189Z",
+            "title": "SEC Small Business Advisory Committee to Discuss IPO Modernization and Regulation Crowdfunding",
+            "summary": "The Securities and Exchange Commission’s Small Business Capital Formation Advisory Committee announced that it will hold a meeting on Tuesday, October 27, 2026, at 10 a.m. to continue discussing IPO modernization and explore potential policy…",
+            "url": "https://www.sec.gov/newsroom/press-releases/2026-105-sec-small-business-advisory-committee-discuss-ipo-modernization-regulation-crowdfunding",
+            "published_at": "2026-10-14T14:30:47.000Z",
+            "first_collected_at": "2026-11-04T14:51:56.006Z",
+            "last_confirmed_at": "2026-11-04T14:51:56.006Z",
             "revision": 1
           }
         ],
@@ -35,19 +35,19 @@
         "limit": "5"
       },
       "answer": {
-        "count": 1,
+        "count": 5,
         "records": [
           {
-            "id": "bfd29e380e13d7172bfbff961a5b2f8e",
-            "regulator": "TESTREG",
-            "jurisdiction": "CA",
+            "id": "220e2c07a1dc5cbe10b89f0c6af4cae0",
+            "regulator": "FCA",
+            "jurisdiction": "UK",
             "category": "news",
-            "title": "Consultation on capital adequacy",
-            "summary": "A 90 day consultation opens today.",
-            "url": "https://example.test/news/car",
-            "published_at": "2026-07-21T14:00:00.000Z",
-            "first_collected_at": "2026-11-04T12:10:31.189Z",
-            "last_confirmed_at": "2026-11-04T12:10:31.189Z",
+            "title": "Act now to be resilient in the quantum future",
+            "summary": null,
+            "url": "https://www.fca.org.uk/news/blogs/act-now-be-resilient-quantum-future",
+            "published_at": "2026-11-04T15:01:00.000Z",
+            "first_collected_at": "2026-11-04T14:51:56.569Z",
+            "last_confirmed_at": "2026-11-04T14:51:56.569Z",
             "revision": 1
           }
         ],
@@ -57,29 +57,29 @@
     },
     "change": {
       "query": {
-        "id": "bfd29e380e13d7172bfbff961a5b2f8e"
+        "id": "2e4d9d984bbd129e697a14d8b6cd0e71"
       },
       "answer": {
         "record": {
-          "id": "bfd29e380e13d7172bfbff961a5b2f8e",
-          "regulator": "TESTREG",
-          "jurisdiction": "CA",
+          "id": "2e4d9d984bbd129e697a14d8b6cd0e71",
+          "regulator": "SEC",
+          "jurisdiction": "US",
           "category": "news",
-          "title": "Consultation on capital adequacy",
-          "summary": "A 90 day consultation opens today.",
-          "url": "https://example.test/news/car",
-          "published_at": "2026-07-21T14:00:00.000Z",
-          "first_collected_at": "2026-11-04T12:10:31.189Z",
-          "last_confirmed_at": "2026-11-04T12:10:31.189Z",
+          "title": "SEC Small Business Advisory Committee to Discuss IPO Modernization and Regulation Crowdfunding",
+          "summary": "The Securities and Exchange Commission’s Small Business Capital Formation Advisory Committee announced that it will hold a meeting on Tuesday, October 27, 2026, at 10 a.m. to continue discussing IPO modernization and explore potential policy…",
+          "url": "https://www.sec.gov/newsroom/press-releases/2026-105-sec-small-business-advisory-committee-discuss-ipo-modernization-regulation-crowdfunding",
+          "published_at": "2026-10-14T14:30:47.000Z",
+          "first_collected_at": "2026-11-04T14:51:56.006Z",
+          "last_confirmed_at": "2026-11-04T14:51:56.006Z",
           "revision": 1
         },
         "revisions": [
           {
             "revision": 1,
-            "observed_at": "2026-11-04T12:10:31.189Z",
-            "title": "Consultation on capital adequacy",
-            "summary": "A 90 day consultation opens today.",
-            "url": "https://example.test/news/car"
+            "observed_at": "2026-11-04T14:51:56.006Z",
+            "title": "SEC Small Business Advisory Committee to Discuss IPO Modernization and Regulation Crowdfunding",
+            "summary": "The Securities and Exchange Commission’s Small Business Capital Formation Advisory Committee announced that it will hold a meeting on Tuesday, October 27, 2026, at 10 a.m. to continue discussing IPO modernization and explore potential policy…",
+            "url": "https://www.sec.gov/newsroom/press-releases/2026-105-sec-small-business-advisory-committee-discuss-ipo-modernization-regulation-crowdfunding"
           }
         ],
         "notice": "This is a public information service. It is not legal or compliance advice. Use is under the DAP API terms: https://dap.solutions/terms/api/."
@@ -96,7 +96,7 @@
         "content": [
           {
             "type": "text",
-            "text": "1 record(s), most recent first.\n\nTESTREG (CA) | 2026-07-21 | news\nConsultation on capital adequacy\nA 90 day consultation opens today.\nhttps://example.test/news/car\nid: bfd29e380e13d7172bfbff961a5b2f8e"
+            "text": "5 record(s), most recent first.\n\nSEC (US) | 2026-10-14 | news\nSEC Small Business Advisory Committee to Discuss IPO Modernization and Regulation Crowdfunding\nThe Securities and Exchange Commission’s Small Business Capital Formation Advisory Committee announced that it will hold a meeting on Tuesday, October 27, 2026, at 10 a.m. to continue discussing IPO modernization and explore potential policy…\nhttps://www.sec.gov/newsroom/press-releases/2026-105-sec-small-business-advisory-committee-discuss-ipo-modernization-regulation-crowdfunding\nid: 2e4d9d984bbd129e697a14d8b6cd0e71"
           }
         ]
       }
@@ -110,20 +110,20 @@
         "content": [
           {
             "type": "text",
-            "text": "1 record(s) from the last 365 days, most recent first.\n\nTESTREG (CA) | 2026-07-21 | news\nConsultation on capital adequacy\nA 90 day consultation opens today.\nhttps://example.test/news/car\nid: bfd29e380e13d7172bfbff961a5b2f8e"
+            "text": "5 record(s) from the last 365 days, most recent first.\n\nFCA (UK) | 2026-11-04 | news\nAct now to be resilient in the quantum future\nhttps://www.fca.org.uk/news/blogs/act-now-be-resilient-quantum-future\nid: 220e2c07a1dc5cbe10b89f0c6af4cae0"
           }
         ]
       }
     },
     "get_regulatory_change": {
       "arguments": {
-        "id": "bfd29e380e13d7172bfbff961a5b2f8e"
+        "id": "2e4d9d984bbd129e697a14d8b6cd0e71"
       },
       "answer": {
         "content": [
           {
             "type": "text",
-            "text": "TESTREG (CA) | 2026-07-21 | news\nConsultation on capital adequacy\nA 90 day consultation opens today.\nhttps://example.test/news/car\nid: bfd29e380e13d7172bfbff961a5b2f8e\n\nFirst seen: 2026-11-04T12:10:31.189Z\nLast confirmed: 2026-11-04T12:10:31.189Z\n\nNo amendments observed since first collection."
+            "text": "SEC (US) | 2026-10-14 | news\nSEC Small Business Advisory Committee to Discuss IPO Modernization and Regulation Crowdfunding\nThe Securities and Exchange Commission’s Small Business Capital Formation Advisory Committee announced that it will hold a meeting on Tuesday, October 27, 2026, at 10 a.m. to continue discussing IPO modernization and explore potential policy…\nhttps://www.sec.gov/newsroom/press-releases/2026-105-sec-small-business-advisory-committee-discuss-ipo-modernization-regulation-crowdfunding\nid: 2e4d9d984bbd129e697a14d8b6cd0e71\n\nFirst seen: 2026-11-04T14:51:56.006Z\nLast confirmed: 2026-11-04T14:51:56.006Z\n\nNo amendments observed since first collection."
           }
         ]
       }
