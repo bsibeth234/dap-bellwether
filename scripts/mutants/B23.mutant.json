@@ -1,0 +1,11 @@
+{
+  "id": "B23",
+  "description": "a licensed bare call answered with no id instead of refused",
+  "edits": [
+    {
+      "file": "src/api.js",
+      "find": "    if (refusal !== null && licence.status === 'valid') return answered(badRequest(refusal));\n",
+      "replace": ""
+    }
+  ]
+}

@@ -336,3 +336,18 @@ test('the page wears the 2026 brand, not the superseded Section one', async () =
     assert.doesNotMatch(html, /[\u2013\u2014]/);
   }
 });
+
+test('robots.txt is open on the custom domain and closed on the workers.dev fallback', async () => {
+  const custom = await get('/robots.txt');
+  assert.equal(custom.status, 200);
+  assert.match(custom.headers.get('Content-Type'), /^text\/plain/);
+  const open = await custom.text();
+  assert.match(open, /^User-agent: \*$/m);
+  assert.match(open, /^Allow: \/$/m);
+  assert.match(open, /^Content-Signal: search=yes, ai-input=yes, ai-train=yes$/m);
+  assert.doesNotMatch(open, /^Disallow:/m, 'the API stays crawlable, so directories can read its price');
+  assert.doesNotMatch(open, /[\u2013\u2014]/, 'no en or em dash');
+
+  const fallback = await get('/robots.txt', 'https://dap-bellwether.dap-solutions.workers.dev');
+  assert.equal(await fallback.text(), 'User-agent: *\nDisallow: /\n');
+});
