@@ -47,6 +47,24 @@ export function isFallbackHost(hostname) {
 }
 
 /**
+ * robots.txt. Open by design on the custom domain, as on dap.solutions: search, AI answers and AI training
+ * are all welcome, and the API stays crawlable so agent directories can find its prices. The workers.dev
+ * fallback asks crawlers to stay out, for the same reason its landing page carries noindex: one indexed copy.
+ *
+ * @param {string} hostname
+ */
+export function robotsTxt(hostname) {
+  if (isFallbackHost(hostname)) return 'User-agent: *\nDisallow: /\n';
+  return [
+    '# DAP Bellwether. Open by design: search, AI answers and AI training are all welcome.',
+    'User-agent: *',
+    'Content-Signal: search=yes, ai-input=yes, ai-train=yes',
+    'Allow: /',
+    '',
+  ].join('\n');
+}
+
+/**
  * The pricing summary for /health. A tier switched on before its tables exist
  * answers every metered call free, so it reports degraded and says why.
  */
@@ -83,6 +101,12 @@ export default {
           'Cache-Control': 'public, max-age=300',
           'Access-Control-Allow-Origin': '*',
         },
+      });
+    }
+
+    if (url.pathname === '/robots.txt') {
+      return new Response(robotsTxt(url.hostname), {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
       });
     }
 

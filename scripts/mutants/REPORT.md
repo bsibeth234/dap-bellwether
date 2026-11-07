@@ -24,5 +24,9 @@ Each mutant edits one payment or analytics branch of the change of 4 November 20
 | B18 | a free API call with the paid tier off recorded as refused | Deny | one data point per answered API call: challenged, paid, refused, licensed, free; the payer only as a hash |
 | B19 | a free MCP call the tool refused recorded as free | Deny | one data point per answered tools/call: free within the allowance, challenged past it, paid, refused, licensed |
 | B20 | the challenge past the allowance not recorded on MCP | Deny | one data point per answered tools/call: free within the allowance, challenged past it, paid, refused, licensed; fuzz: no data point ever holds a wallet address, a query or a licence key |
+| B21 | a call that sends a payment without the id treated as a price probe, so the payment reaches the gate | Deny | a payment sent without the id is refused before verification, and never charged |
+| B22 | a bare call to /api/change refused with 400, so a directory never sees its price | Deny | every spelling of a priced path is priced through the Worker, never answered free; a bare call to an endpoint with a required parameter gets the price, as a directory probes it |
+| B23 | a licensed bare call answered with no id instead of refused | Deny | a bare call with a licence key, or with the paid tier off, is refused: there is no price to show |
+| B24 | the workers.dev fallback served the open robots.txt, so a second copy can be indexed | Deny | robots.txt is open on the custom domain and closed on the workers.dev fallback |
 
-All 20 Deny.
+All 24 Deny.

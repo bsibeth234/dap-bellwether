@@ -1,0 +1,11 @@
+{
+  "id": "B22",
+  "description": "a bare call to /api/change refused with 400, so a directory never sees its price",
+  "edits": [
+    {
+      "file": "src/api.js",
+      "find": "return url.search === '' && !request.headers.has('PAYMENT-SIGNATURE');",
+      "replace": "return false;"
+    }
+  ]
+}

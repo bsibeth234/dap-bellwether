@@ -200,7 +200,7 @@ test('with the paid tier on, the first call is priced: 402 with the price and th
 test('every spelling of a priced path is priced through the Worker, never answered free', async () => {
   const db = await seededDb();
   const env = paidSettings(db, { X402_FACILITATOR_URL: 'https://x402.org/facilitator' });
-  for (const path of ['/API/Search', '/api//search/', '/api/./search', '/api/%73earch', '/Api/Recent']) {
+  for (const path of ['/API/Search', '/api//search/', '/api/./search', '/api/%73earch', '/Api/Recent', '/api/change']) {
     const response = await worker.fetch(new Request(`${ORIGIN}${path}`, { headers: { 'CF-Connecting-IP': '203.0.113.9' } }), env, context());
     assert.equal(response.status, 402, path);
     const body = await response.json();
@@ -222,7 +222,8 @@ test('a bad request is refused before any payment is asked for, and never charge
     '/api/recent?days=0',
     '/api/recent?query=capital',
     '/api/change?id=nothex',
-    '/api/change',
+    '/api/change?id=',
+    '/api/change?x=1',
     '/api/change?id=0123456789abcdef0123456789abcdef&x=1',
     '/api/search?since=2026-02-30',
     '/api/search?until=2026-13-01',
@@ -235,6 +236,47 @@ test('a bad request is refused before any payment is asked for, and never charge
     assert.equal(facilitator.seen.verify.length, 0);
   }
   assert.deepEqual(await usage(db), []);
+});
+
+test('a bare call to an endpoint with a required parameter gets the price, as a directory probes it', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  for (const path of ['/api/change', '/API/Change/', '/api/change?']) {
+    const { response, json, facilitator } = await get(env, path);
+    assert.equal(response.status, 402, path);
+    const challenge = decodeHeader(response.headers.get('PAYMENT-REQUIRED'));
+    assert.equal(challenge.accepts[0].amount, '10000');
+    assert.equal(challenge.resource.url, `${ORIGIN}/api/change`);
+    assert.deepEqual(Object.keys(challenge.extensions.bazaar.info.input.queryParams), ['id'], 'the listing shows the id it needs');
+    assert.equal(json.record, undefined, `${path} carries no record`);
+    assert.equal(facilitator.seen.verify.length, 0);
+  }
+  assert.deepEqual(await usage(db), ['api:change challenged 3']);
+});
+
+test('a payment sent without the id is refused before verification, and never charged', async () => {
+  const db = await seededDb();
+  const env = paidSettings(db);
+  const probe = await get(env, '/api/change');
+  const facilitator = fakeFacilitator();
+  const { response, json } = await get(env, '/api/change', { headers: { 'PAYMENT-SIGNATURE': paymentHeader(probe.response, { nonce: '66' }) }, facilitator });
+  assert.equal(response.status, 400);
+  assert.equal(json.error, 'invalid_request');
+  assert.equal(response.headers.get('PAYMENT-REQUIRED'), null);
+  assert.equal(facilitator.seen.verify.length, 0);
+  assert.equal(facilitator.seen.settle.length, 0);
+});
+
+test('a bare call with a licence key, or with the paid tier off, is refused: there is no price to show', async () => {
+  const db = await seededDb();
+  const licence = await issue(db);
+  const licensed = await get(paidSettings(db), '/api/change', { headers: { Authorization: `Bearer ${licence.key}` } });
+  assert.equal(licensed.response.status, 400);
+  assert.equal(licensed.json.error, 'invalid_request');
+  assert.deepEqual(await licenceUsage(db), [], 'a refusal is not counted against the licence');
+  const off = await get({ DB: db, LICENCES: db.licences }, '/api/change');
+  assert.equal(off.response.status, 400);
+  assert.equal(off.json.error, 'invalid_request');
 });
 
 test('a paid call is verified, answered as JSON, settled, and the facilitator never sees the query', async () => {

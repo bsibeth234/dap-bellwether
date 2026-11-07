@@ -1,0 +1,11 @@
+{
+  "id": "B21",
+  "description": "a call that sends a payment without the id treated as a price probe, so the payment reaches the gate",
+  "edits": [
+    {
+      "file": "src/api.js",
+      "find": "return url.search === '' && !request.headers.has('PAYMENT-SIGNATURE');",
+      "replace": "return url.search === '';"
+    }
+  ]
+}

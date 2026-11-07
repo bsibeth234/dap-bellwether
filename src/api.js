@@ -9,6 +9,8 @@
  *
  * Three ways to be answered, checked in this order:
  *   a bad request        400, before any payment is asked for, never charged
+ *                        (a bare call, with no query and no payment, only asks
+ *                        the price, so it gets the 402: isPriceProbe)
  *   a DAP licence key    answered and counted against the licence (licences.js)
  *   an x402 payment      verified, answered, settled, then released (the gate)
  * Without either, a priced endpoint answers 402 with the price.
@@ -91,6 +93,14 @@ const ALLOWED = {
   recent: ['jurisdiction', 'days', 'limit'],
   change: ['id'],
 };
+
+/**
+ * Whether a GET only asks for the price: no query string at all and no payment. x402 directories probe each
+ * listed endpoint this way and list it only if it answers 402 with a price it can parse.
+ */
+export function isPriceProbe(url, request) {
+  return url.search === '' && !request.headers.has('PAYMENT-SIGNATURE');
+}
 
 function wholeNumber(raw, name, min, max) {
   if (!/^\d{1,4}$/.test(raw)) return { error: `${name} must be a whole number from ${min} to ${max}.` };
@@ -359,14 +369,21 @@ export async function handleApi(request, env, ctx, overrides) {
     return response;
   };
   let params = null;
+  let refusal = null;
   if (method === 'GET') {
     const parsed = parseParams(endpoint, url.searchParams);
-    if (parsed.error) return answered(badRequest(parsed.error));
-    params = parsed.params;
+    // A bare call (no query string and no payment) only asks what the endpoint costs, as a directory checks
+    // before it lists an endpoint. It gets the price. Any call that sends parameters or a payment is still
+    // checked first, so nothing is ever charged for a request this endpoint would refuse.
+    if (parsed.error && !isPriceProbe(url, request)) return answered(badRequest(parsed.error));
+    if (parsed.error) refusal = parsed.error;
+    else params = parsed.params;
 
     const licence = await readLicence(request, env);
     if (licence.status === 'invalid') return answered(licenceRefused());
     if (licence.status === 'unavailable') return answered(licenceUnavailable());
+    // A licensed call is answered, never priced, so a probe that sends a key gets the refusal.
+    if (refusal !== null && licence.status === 'valid') return answered(badRequest(refusal));
     if (licence.status === 'valid') {
       let response;
       try {
@@ -384,7 +401,8 @@ export async function handleApi(request, env, ctx, overrides) {
 
   const pricing = pricingFor(env, overrides);
   if (pricing.status !== 'on') {
-    // With the paid tier off, nothing is charged anywhere.
+    // With the paid tier off, nothing is charged anywhere, so there is no price to show a probe.
+    if (method === 'GET' && refusal !== null) return answered(badRequest(refusal));
     if (method === 'GET') {
       note(env, ctx, day, tool, 'unmetered');
       try {
@@ -416,7 +434,9 @@ export async function handleApi(request, env, ctx, overrides) {
 
   let response;
   try {
-    response = await pricing.gate.handle(request, () => answer(endpoint, params, env));
+    // A probe carries no payment, so the gate prices it and never calls the answer. The refusal guard
+    // is a second line: were the gate ever to reach it, the call is refused and nothing settles.
+    response = await pricing.gate.handle(request, () => (refusal !== null ? badRequest(refusal) : answer(endpoint, params, env)));
   } catch (err) {
     // The claim (taken before verification) or the answer threw. The gate
     // releases the claim when the answer throws and settles nothing, so

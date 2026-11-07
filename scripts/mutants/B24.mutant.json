@@ -1,0 +1,11 @@
+{
+  "id": "B24",
+  "description": "the workers.dev fallback served the open robots.txt, so a second copy can be indexed",
+  "edits": [
+    {
+      "file": "src/index.js",
+      "find": "  if (isFallbackHost(hostname)) return 'User-agent: *\\nDisallow: /\\n';\n",
+      "replace": ""
+    }
+  ]
+}
