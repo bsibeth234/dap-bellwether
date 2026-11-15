@@ -1,0 +1,178 @@
+name: Test and deploy
+
+# DAP Bellwether's pipeline, the same shape as dap-solutions-site's (.github/workflows/cloudflare.yml there):
+#
+#   pull request, push   test: npm ci, the Bazaar examples from the regulators' live feeds, npm test, a bundle
+#                        check. Cloudflare is never called and no secret is read.
+#   push to main         then deploy: the Worker goes live at bellwether.dap.solutions, with exactly the examples
+#                        the test job built and tested
+#                        then live check: /llms.txt, /openapi.json and the 402 on a paid route
+#                        (scripts/live-check.mjs). A failed check rolls back to the version that was live
+#                        before this deploy and fails the run.
+#
+# Secrets: CLOUDFLARE_API_TOKEN, on the wrangler steps of the deploy and live check jobs and nowhere else.
+# CLOUDFLARE_ACCOUNT_ID is read the same way if it exists; without it wrangler finds the account from the token,
+# and if it cannot, the deploy job stops at its first, read-only step and says so. No account id is written
+# here or in wrangler.toml. Never echo either secret. README, "Deploying", has the rollback by hand.
+#
+# Every action is pinned to a commit, with its release in a comment. Change a pin only to a commit read from
+# that action's own repository. test/pipeline.test.mjs holds this file to these rules.
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One production deploy and its live check at a time, never cancelled: a later push to main waits for the
+  # earlier one's live check (and rollback, if any) to finish. A newer push to a pull request replaces its run.
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'bellwether-production' || format('bellwether-{0}', github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Node 26, the current LTS
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - name: Install
+        run: npm ci
+      # The examples every 402's Bazaar listing carries, built from real publications. The deploy job refuses
+      # examples from the test regulator (scripts/check-bazaar-examples.mjs), so this step is what lets main ship.
+      - name: Bazaar examples from the regulators' live feeds
+        run: |
+          set -o pipefail
+          npm run build:bazaar -- --feeds
+          node -e 'const e=require("./src/bazaar-examples.json");console.log("Bazaar examples built from " + e.source + ".")' | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Test
+        run: npm test
+      - name: Bundle check (no deploy)
+        run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/bundle"
+      - name: Keep the tested examples for the deploy job
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bazaar-examples
+          path: src/bazaar-examples.json
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://bellwether.dap.solutions
+    outputs:
+      previous: ${{ steps.live.outputs.previous }}
+      started: ${{ steps.deploy.outputs.started }}
+      version: ${{ steps.deploy.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Node 26
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      # No install scripts: the deploy needs wrangler's files, not a package's code running beside the token.
+      - name: Install the pinned wrangler
+        run: npm ci --ignore-scripts
+      - name: The examples the test job built and tested
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bazaar-examples
+          path: src
+      - name: The examples come from real publications
+        run: node scripts/check-bazaar-examples.mjs
+      # Read only. Finds the account and the version live now, which is what a failed live check rolls back to.
+      - name: The version live now
+        id: live
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ACCOUNT:-}" ]; then export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT"; fi
+          if ! npx wrangler deployments status --json > "$RUNNER_TEMP/live.json" 2> "$RUNNER_TEMP/live.err"; then
+            cat "$RUNNER_TEMP/live.err"
+            echo "::error title=Cloudflare account or token::wrangler could not read the live version of dap-bellwether, so nothing was deployed. If it could not retrieve the account, add the Actions secret CLOUDFLARE_ACCOUNT_ID and re-run this job."
+            exit 1
+          fi
+          previous="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const d=JSON.parse(t.slice(t.indexOf("{"),t.lastIndexOf("}")+1));const v=(d.versions||[]).find(x=>x.percentage===100)||(d.versions||[])[0];process.stdout.write(v&&/^[0-9a-f-]{36}$/.test(v.version_id)?v.version_id:"")' "$RUNNER_TEMP/live.json")"
+          if [ -z "$previous" ]; then echo "::error title=Live version::wrangler answered, but no live version id was found. Nothing was deployed."; exit 1; fi
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "Live before this deploy: \`$previous\` (the rollback target)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy main to bellwether.dap.solutions
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ACCOUNT:-}" ]; then export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT"; fi
+          # Set first, so the live check (and its rollback) runs even if wrangler fails part way.
+          echo "started=true" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --tag "${GITHUB_SHA::7}" --message "main ${GITHUB_SHA::7}" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+          version="$(grep -oE 'Current Version ID: [0-9a-f-]{36}' "$RUNNER_TEMP/deploy.log" | head -1 | awk '{print $4}')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Deployed \`${GITHUB_SHA::7}\` as version \`${version:-unknown}\`." >> "$GITHUB_STEP_SUMMARY"
+
+  live-check:
+    needs: deploy
+    if: always() && needs.deploy.outputs.started == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://bellwether.dap.solutions
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Node 26
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - name: Live check
+        id: check
+        run: |
+          set -o pipefail
+          node scripts/live-check.mjs https://bellwether.dap.solutions | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Roll back to the version live before this deploy
+        if: failure() && steps.check.outcome == 'failure'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS: ${{ needs.deploy.outputs.previous }}
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          if [ -n "${ACCOUNT:-}" ]; then export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT"; fi
+          if [ -n "$PREVIOUS" ]; then
+            npx wrangler rollback "$PREVIOUS" --message "Live check failed on ${GITHUB_SHA::7}" --yes
+          else
+            npx wrangler rollback --message "Live check failed on ${GITHUB_SHA::7}" --yes
+          fi
+          echo "::error title=Live check failed, rolled back::bellwether.dap.solutions failed its live check after deploying ${GITHUB_SHA::7}, and was rolled back to ${PREVIOUS:-the previous version}. Read the live check table in this run's summary."
+          echo "**Rolled back** to \`${PREVIOUS:-the previous version}\` after the live check failed." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
