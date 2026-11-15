@@ -343,7 +343,7 @@ export async function handleApi(request, env, ctx, overrides) {
   if (canonical === null) return json({ error: 'invalid_path' }, 400);
   const endpoint = resolveEndpoint(canonical);
   if (!endpoint) {
-    return json({ error: 'not_found', message: 'See https://bellwether.dap.solutions/openapi.json for the endpoints.' }, 404);
+    return json({ error: 'not_found', message: 'See https://bellwether.dap.solutions/openapi.json for the endpoints, or https://bellwether.dap.solutions/llms.txt in plain text.' }, 404);
   }
   const method = request.method.toUpperCase();
   const now = (overrides && overrides.now) || Date.now;

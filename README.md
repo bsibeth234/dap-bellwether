@@ -54,7 +54,7 @@ The paid tier is off until it is switched on (see Deploying). While it is off, e
 
 ### JSON API
 
-The same records as JSON over HTTPS GET, for agents and systems that do not speak MCP. Described in OpenAPI 3.1 at `https://bellwether.dap.solutions/openapi.json`.
+The same records as JSON over HTTPS GET, for agents and systems that do not speak MCP. Described in OpenAPI 3.1 at `https://bellwether.dap.solutions/openapi.json`, and in plain text at `https://bellwether.dap.solutions/llms.txt`.
 
 | Endpoint | Price |
 | --- | --- |

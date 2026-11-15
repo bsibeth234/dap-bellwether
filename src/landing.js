@@ -198,7 +198,7 @@ function priceMarkup(pricing) {
   }
   return `<p>Free for people: ${esc(pricing.freeCallsPerDay)} calls a day from any one address to the three data tools, reset at 00:00 UTC. list_coverage is always free.</p>
 <p>Agents pay per call past that: ${esc(pricing.price)} in USDC on ${esc(pricing.networkLabel)}, with x402 through <a href="${AGENT_PAYMENTS_URL}">DAP Agent Payments</a>. A call that fails is never charged and does not count.</p>
-<p>Agents that call HTTP rather than MCP can use the JSON API at /api, at ${esc(pricing.price)} from the first call. It is described at <a href="/openapi.json">/openapi.json</a>.</p>
+<p>Agents that call HTTP rather than MCP can use the JSON API at /api, at ${esc(pricing.price)} from the first call. It is described at <a href="/openapi.json">/openapi.json</a>, and in plain text, with the terms and prices, at <a href="/llms.txt">/llms.txt</a>.</p>
 ${licence}`;
 }
 

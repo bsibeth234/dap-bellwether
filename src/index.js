@@ -15,6 +15,7 @@ import { handleMcp, paymentStoreReady, purgeAllowanceCounts } from './payments.j
 import { handleApi } from './api.js';
 import { licenceStoreReady } from './licences.js';
 import { openApiDocument, wellKnownX402 } from './openapi.js';
+import { llmsTxt } from './llms.js';
 import { canonicalPath } from './x402/path.ts';
 import { purgePaymentClaims } from './claims.js';
 import { pricingFor, pricingSummary } from './pricing.js';
@@ -100,6 +101,20 @@ export default {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'public, max-age=300',
           'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    // The service in plain text, built per request from the OpenAPI document and the live price settings
+    // (llms.js), so an agent or crawler can read the terms and prices before it pays.
+    if (url.pathname === '/llms.txt') {
+      return new Response(llmsTxt(env), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Link',
+          Link: TERMS_LINK,
         },
       });
     }
