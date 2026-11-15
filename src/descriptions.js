@@ -33,6 +33,13 @@ const JOBS = {
   ],
 };
 
+/** When to use a tool and the job it does, without the price, for /llms.txt (llms.js), which states the price from the live settings. */
+export function jobOf(name) {
+  const job = JOBS[name];
+  if (!job) throw new Error(`No description for ${name}`);
+  return job.join(' ');
+}
+
 /** The MCP description of a tool. list_coverage is always free. */
 export function describe(name) {
   const job = JOBS[name];
