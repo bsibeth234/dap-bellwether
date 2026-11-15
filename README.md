@@ -125,7 +125,7 @@ Sources are isolated during ingest. One regulator failing is recorded against th
 
 ```bash
 npm install
-npm test                     # 173 tests, no network required (Node 22.5 or later)
+npm test                     # 199 tests, no network required (Node 22.5 or later)
 npm run verify:sources       # confirms every feed endpoint is live, requires network
 ```
 
@@ -150,6 +150,34 @@ curl "http://localhost:8790/__scheduled?cron=0+*/6+*+*+*"
 ```
 
 Use `--remote` rather than plain `wrangler dev`. Local `workerd` cannot reach every regulator: OSFI and CFTC both fail there with a header-independent connection error while succeeding from Cloudflare's network, so a local run will under-report coverage and tell you a source is broken when it is not.
+
+### Deploy on merge
+
+Production deploys from GitHub Actions, `.github/workflows/deploy.yml`, the same shape as dap-solutions-site's pipeline. Nobody runs `wrangler deploy` by hand any more.
+
+| When | Job | What it does |
+| --- | --- | --- |
+| Every pull request and push | `test` | `npm ci`, `npm run build:bazaar -- --feeds`, `npm test`, a bundle check. No secret, no Cloudflare call. |
+| Push to `main`, tests green | `deploy` | Reads the version live now (the rollback target), checks the examples the test job built come from real publications, then `wrangler deploy`, tagged with the commit. |
+| After the deploy | `live-check` | `node scripts/live-check.mjs https://bellwether.dap.solutions`: `/llms.txt` is 200 `text/plain`, `/openapi.json` is 200, and a bare `GET /api/search` is 402 asking 10000 on `eip155:8453` to the DAP wallet, the challenge recorded on 1 November 2026. Retries for two minutes while the edge catches up. |
+| The live check fails | `live-check` | `wrangler rollback` to the version read before the deploy, then the run fails with an error naming it. |
+
+- One production deploy and its live check run at a time. A later push to `main` waits; it is never cancelled.
+- The token is the Actions secret `CLOUDFLARE_API_TOKEN`, on the wrangler steps of `deploy` and `live-check` only. `CLOUDFLARE_ACCOUNT_ID` is read the same way if it exists. Without it wrangler finds the account from the token; if it cannot, `deploy` stops at its first, read-only step and nothing is deployed.
+- A deliberate change to the price, network or wallet must change `EXPECTED` in `scripts/live-check.mjs` in the same pull request, or the live check will roll it back.
+- `test/pipeline.test.mjs` holds the workflow to its rules: actions pinned to commits, read-only permissions, secrets only on wrangler steps, deploys only on `main` after the tests.
+
+Roll back by hand, from a clone with wrangler logged in, to the version before the current one:
+
+```bash
+npx wrangler rollback --message "Roll back by hand"
+```
+
+Or name a version from the run summary, or from the Worker's Deployments tab in the Cloudflare dashboard:
+
+```bash
+npx wrangler rollback <version-id> --message "Roll back by hand"
+```
 
 ### The paid tier
 
